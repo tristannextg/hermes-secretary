@@ -1,0 +1,67 @@
+services:
+  obsidian-ops:
+    build:
+      context: .
+      dockerfile: services/obsidian_ops/Dockerfile
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    ports:
+      - "127.0.0.1:${API_PORT_HOST:-8765}:8765"
+    environment:
+      VAULT_PATH: /vault
+      REPOS_PATH: /repos
+      TEMPLATES_PATH: /app/templates
+      ARTICLE_SOURCES: /app/config/article_sources.yaml
+      LEETCODE_STATE_PATH: /state/leetcode_state.json
+      DRY_RUN: "true"
+      API_HOST: 0.0.0.0
+      API_PORT: "8765"
+    volumes:
+      - ./examples/sample_vault:/vault:rw
+      - ./state:/state:rw
+      - ./config:/app/config:ro
+      - ./templates:/app/templates:ro
+      - ./examples/sample_repos:/repos:ro
+
+  repo-worker:
+    build:
+      context: .
+      dockerfile: services/obsidian_ops/Dockerfile
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    environment:
+      REPOS_PATH: /repos
+      DRY_RUN: "true"
+    volumes:
+      - ./examples/sample_repos:/repos:ro
+    command: ["python", "-m", "obsidian_ops.repo_summary"]
+
+  backup-worker:
+    build:
+      context: .
+      dockerfile: services/obsidian_ops/Dockerfile
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    environment:
+      BACKUP_BACKEND: dry-run
+      BACKUP_REPOSITORY_PATH: /backups/obsidian-vault
+      DRY_RUN: "true"
+    command: ["obsidian-ops", "backup"]

@@ -1,0 +1,17 @@
+[Unit]
+Description=Hermes Obsidian Ops API
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/hermes-obsidian-ops
+EnvironmentFile=%h/hermes-obsidian-ops/.env
+ExecStart=%h/hermes-obsidian-ops/.venv/bin/obsidian-ops serve
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=%h/hermes-obsidian-ops/state
+
+[Install]
+WantedBy=default.target

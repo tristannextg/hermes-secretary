@@ -1,0 +1,58 @@
+services:
+  obsidian-ops:
+    build:
+      context: ./services/obsidian_ops
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    env_file:
+      - .env
+    volumes:
+      # Dry-run default. Replace for real deployment after read-only validation.
+      - ./examples/sample_vault:/vault:rw
+      - ./state:/state:rw
+      - ./templates:/app/templates:ro
+    ports:
+      - "127.0.0.1:8765:8765"
+    command: ["python", "-m", "obsidian_ops.main"]
+
+  repo-worker:
+    build:
+      context: ./services/repo_worker
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    env_file:
+      - .env
+    volumes:
+      - ./state:/state:rw
+      - /srv/repos:/repos:ro
+    command: ["python", "-m", "repo_worker.main"]
+
+  backup-worker:
+    build:
+      context: ./services/backup_worker
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    env_file:
+      - .env
+    volumes:
+      - ./state:/state:rw
+      - ./examples/sample_vault:/vault:ro
+    command: ["python", "-m", "backup_worker.main"]

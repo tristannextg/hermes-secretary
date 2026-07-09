@@ -1,0 +1,28 @@
+---
+type: daily
+date: {{ date }}
+weekday: {{ weekday }}
+tags:
+  - daily
+agent:
+  indexed_at:
+---
+
+# {{ date }} - {{ weekday }}
+
+## Plan
+
+- [ ] 
+
+## Notes
+
+
+## Reminders
+
+{% for reminder in reminders %}
+- [ ] {{ reminder.text }} #task #reminder 📅 {{ reminder.due_date }}
+{% endfor %}
+
+## Reflection
+
+What did I learn today?

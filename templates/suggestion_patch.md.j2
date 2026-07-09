@@ -1,0 +1,31 @@
+---
+type: agent-suggestion
+status: needs-approval
+created: {{ date }}
+source_file: {{ source_file }}
+action: {{ action }}
+risk_level: {{ risk_level }}
+tags:
+  - agent/suggestion
+---
+
+# Hermes suggestion - {{ action }}
+
+Source: `{{ source_file }}`
+
+## Reason
+
+{{ reason }}
+
+## Suggested change
+
+```diff
+{{ diff }}
+```
+
+## Approval
+
+- [ ] Approve this change
+- [ ] Reject this change
+
+To approve later, use an explicit approval command in the source note or through the Hermes chat interface.

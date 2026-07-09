@@ -1,0 +1,10 @@
+[Unit]
+Description=Hermes Obsidian morning briefing
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/hermes-obsidian-ops
+ExecStart=%h/hermes-obsidian-ops/scripts/run_morning_briefing.sh
+Nice=5

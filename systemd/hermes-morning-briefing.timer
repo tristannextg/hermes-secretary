@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Hermes Obsidian morning briefing on weekdays
+
+[Timer]
+OnCalendar=Mon..Fri 06:30
+Persistent=true
+Unit=hermes-morning-briefing.service
+
+[Install]
+WantedBy=timers.target

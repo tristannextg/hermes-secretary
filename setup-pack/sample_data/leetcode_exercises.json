@@ -1,0 +1,56 @@
+[
+  {
+    "title": "Two Sum",
+    "difficulty": "Easy",
+    "topic": "hash map",
+    "url": "https://leetcode.com/problems/two-sum/",
+    "why_selected": "Rebuild the basic lookup pattern that appears in many code reviews.",
+    "target_minutes": 20,
+    "reflection_prompt": "What invariant does the hash map maintain while iterating?"
+  },
+  {
+    "title": "Valid Parentheses",
+    "difficulty": "Easy",
+    "topic": "stack",
+    "url": "https://leetcode.com/problems/valid-parentheses/",
+    "why_selected": "Practice state tracking with a compact data structure.",
+    "target_minutes": 20,
+    "reflection_prompt": "What makes the stack representation sufficient?"
+  },
+  {
+    "title": "Merge Two Sorted Lists",
+    "difficulty": "Easy",
+    "topic": "linked list",
+    "url": "https://leetcode.com/problems/merge-two-sorted-lists/",
+    "why_selected": "Rebuild pointer manipulation fluency without heavy algorithm overhead.",
+    "target_minutes": 25,
+    "reflection_prompt": "Where can pointer updates accidentally lose data?"
+  },
+  {
+    "title": "Best Time to Buy and Sell Stock",
+    "difficulty": "Easy",
+    "topic": "array / one-pass invariant",
+    "url": "https://leetcode.com/problems/best-time-to-buy-and-sell-stock/",
+    "why_selected": "Practice maintaining a running invariant across a sequence.",
+    "target_minutes": 20,
+    "reflection_prompt": "Which value must be remembered to make the algorithm one-pass?"
+  },
+  {
+    "title": "Number of Islands",
+    "difficulty": "Medium",
+    "topic": "graph traversal",
+    "url": "https://leetcode.com/problems/number-of-islands/",
+    "why_selected": "Practice BFS/DFS patterns that map well to production graph-like data problems.",
+    "target_minutes": 35,
+    "reflection_prompt": "How do you prevent revisiting the same node?"
+  },
+  {
+    "title": "Climbing Stairs",
+    "difficulty": "Easy",
+    "topic": "dynamic programming",
+    "url": "https://leetcode.com/problems/climbing-stairs/",
+    "why_selected": "Practice recognizing recurrence relations in a small problem.",
+    "target_minutes": 20,
+    "reflection_prompt": "What subproblem does each step depend on?"
+  }
+]

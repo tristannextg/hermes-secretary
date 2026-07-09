@@ -1,0 +1,32 @@
+{
+  "repos": [
+    {
+      "name": "backend",
+      "branch": "main",
+      "commit_count": 3,
+      "important_commits": [
+        {
+          "hash": "abc1234",
+          "message": "Add token refresh integration test"
+        },
+        {
+          "hash": "def5678",
+          "message": "Prepare auth migration feature flag"
+        }
+      ],
+      "changed_files": [
+        "services/auth/refresh_token.py",
+        "tests/integration/test_refresh_token.py",
+        "config/feature_flags.yml"
+      ],
+      "risk_flags": [
+        "auth",
+        "security",
+        "migration"
+      ],
+      "suggested_attention": [
+        "Verify rollback behavior before merging auth migration changes."
+      ]
+    }
+  ]
+}
