@@ -42,6 +42,25 @@ def test_command_logs_are_created(tmp_path: Path) -> None:
     assert list((tmp_path / "80_Agent" / "Command Log").rglob("*.md"))
 
 
+def test_generated_agent_files_are_not_parsed_for_commands(tmp_path: Path) -> None:
+    _make_vault(tmp_path)
+    generated = tmp_path / "80_Agent" / "Command Log" / "log.md"
+    generated.write_text("# Log\n\n```text\n[@hermes fix all typos in this document]\n```\n", encoding="utf-8")
+    results = process_vault_commands(Vault(tmp_path), _policy(tmp_path), Path("templates"), GitGuard(tmp_path, dry_run=True))
+    assert results == []
+
+
+def test_command_index_prevents_duplicate_handling(tmp_path: Path) -> None:
+    _make_vault(tmp_path)
+    note = tmp_path / "00_Inbox" / "note.md"
+    note.write_text("# Note\n\n[@hermes remind me to check monitoring next week]\n", encoding="utf-8")
+    index = tmp_path / "state" / "command_index.json"
+    first = process_vault_commands(Vault(tmp_path), _policy(tmp_path), Path("templates"), GitGuard(tmp_path, dry_run=True), None, index)
+    second = process_vault_commands(Vault(tmp_path), _policy(tmp_path), Path("templates"), GitGuard(tmp_path, dry_run=True), None, index)
+    assert len(first) == 1
+    assert second == []
+
+
 def _make_vault(tmp_path: Path) -> None:
     for path in [
         "00_Inbox",

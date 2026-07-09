@@ -22,8 +22,11 @@ class Settings:
     article_sources: Path | None
     leetcode_difficulty: tuple[str, ...]
     leetcode_state_path: Path
+    command_index_path: Path
     backup_repository_path: Path | None
     dry_run: bool
+    dry_run_write_to_vault: bool
+    dry_run_output_path: Path
     max_files_per_operation: int
     api_host: str
     api_port: int
@@ -51,8 +54,11 @@ class Settings:
             article_sources=Path(article_value).expanduser() if article_value else None,
             leetcode_difficulty=tuple(_csv(os.environ.get("LEETCODE_DIFFICULTY", "Easy,Medium"))),
             leetcode_state_path=Path(os.environ.get("LEETCODE_STATE_PATH", "state/leetcode_state.json")).expanduser(),
+            command_index_path=Path(os.environ.get("COMMAND_INDEX_PATH", "state/command_index.json")).expanduser(),
             backup_repository_path=Path(backup_value).expanduser() if backup_value else None,
             dry_run=os.environ.get("DRY_RUN", "true").lower() in {"1", "true", "yes", "on"},
+            dry_run_write_to_vault=os.environ.get("DRY_RUN_WRITE_TO_VAULT", "false").lower() in {"1", "true", "yes", "on"},
+            dry_run_output_path=Path(os.environ.get("DRY_RUN_OUTPUT_PATH", "state/dry_run_output")).expanduser(),
             max_files_per_operation=int(os.environ.get("MAX_FILES_PER_OPERATION", "5")),
             api_host=os.environ.get("API_HOST", "127.0.0.1"),
             api_port=int(os.environ.get("API_PORT", "8765")),

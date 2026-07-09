@@ -25,7 +25,12 @@ def create_morning_briefing(settings: Settings, for_date: date | None = None, pr
     vault = Vault(settings.vault_path)
     policy = VaultPolicy(settings.vault_path, settings.allowed_write_dirs, settings.max_files_per_operation)
     git_guard = GitGuard(settings.vault_path, settings.dry_run)
-    command_results = process_vault_commands(vault, policy, settings.templates_path, git_guard) if process_commands else []
+    dry_run_output_root = _dry_run_output_root(settings)
+    command_results = (
+        process_vault_commands(vault, policy, settings.templates_path, git_guard, dry_run_output_root, settings.command_index_path)
+        if process_commands
+        else []
+    )
     notes = vault.recent_notes(days=2)
     tasks = _group_tasks([task for note in notes for task in note.tasks])
     repo_changes = summarize_repos(settings.repos_path)
@@ -64,7 +69,7 @@ def create_morning_briefing(settings: Settings, for_date: date | None = None, pr
             "git_commit": None,
         }
     git_guard.before_write()
-    written = vault.write_relative(relative, content)
+    written = _write_relative(vault, relative, content, dry_run_output_root)
     git_result = git_guard.after_write("agent: generate morning briefing")
     return {
         "ok": True,
@@ -76,6 +81,21 @@ def create_morning_briefing(settings: Settings, for_date: date | None = None, pr
         "files_written": [relative],
         "git_commit": git_result.agent_commit,
     }
+
+
+def _dry_run_output_root(settings: Settings) -> Path | None:
+    if settings.dry_run and not settings.dry_run_write_to_vault:
+        return settings.dry_run_output_path
+    return None
+
+
+def _write_relative(vault: Vault, relative_path: str, content: str, dry_run_output_root: Path | None) -> Path:
+    if dry_run_output_root is None:
+        return vault.write_relative(relative_path, content)
+    target = dry_run_output_root / relative_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    return target
 
 
 def _group_tasks(tasks: list[str]) -> dict[str, list[str]]:

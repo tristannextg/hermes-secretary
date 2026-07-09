@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -57,17 +59,39 @@ def parse_commands(markdown: str, source_file: str) -> list[HermesCommand]:
     return commands
 
 
-def process_vault_commands(vault: Vault, policy: VaultPolicy, templates_path: Path, git_guard: GitGuard) -> list[CommandResult]:
+def process_vault_commands(
+    vault: Vault,
+    policy: VaultPolicy,
+    templates_path: Path,
+    git_guard: GitGuard,
+    dry_run_output_root: Path | None = None,
+    command_index_path: Path | None = None,
+) -> list[CommandResult]:
     results: list[CommandResult] = []
+    handled = _load_command_index(command_index_path)
     for note in vault.markdown_files():
         relative = note.relative_to(vault.root).as_posix()
         text = note.read_text(encoding="utf-8")
         for command in parse_commands(text, relative):
-            results.append(_handle_command(vault, policy, templates_path, git_guard, command, text))
+            index_key = _command_index_key(command)
+            if index_key in handled:
+                continue
+            result = _handle_command(vault, policy, templates_path, git_guard, command, text, dry_run_output_root)
+            results.append(result)
+            handled.add(index_key)
+    _save_command_index(command_index_path, handled)
     return results
 
 
-def _handle_command(vault: Vault, policy: VaultPolicy, templates_path: Path, git_guard: GitGuard, command: HermesCommand, source_text: str) -> CommandResult:
+def _handle_command(
+    vault: Vault,
+    policy: VaultPolicy,
+    templates_path: Path,
+    git_guard: GitGuard,
+    command: HermesCommand,
+    source_text: str,
+    dry_run_output_root: Path | None,
+) -> CommandResult:
     files_written: list[str] = []
     message = "Command logged."
     if command.action == "remind":
@@ -78,7 +102,7 @@ def _handle_command(vault: Vault, policy: VaultPolicy, templates_path: Path, git
         if decision.allowed:
             git_guard.before_write()
             existing = vault.read_relative(reminder_path) if (vault.root / reminder_path).exists() else f"# {datetime.now().date()}\n\n## Hermes reminders\n"
-            vault.write_relative(reminder_path, existing.rstrip() + reminder_line)
+            _write_relative(vault, reminder_path, existing.rstrip() + reminder_line, dry_run_output_root)
             files_written.append(reminder_path)
             git_guard.after_write("agent: create Hermes reminder")
             message = "Reminder created."
@@ -97,7 +121,7 @@ def _handle_command(vault: Vault, policy: VaultPolicy, templates_path: Path, git
         if decision.allowed:
             git_guard.before_write()
             updated = merge_agent_frontmatter(source_text, {"agent": {"suggested_tags": suggested_tags, "confidence": 0.55}})
-            vault.write_relative(command.source_file, updated)
+            _write_relative(vault, command.source_file, updated, dry_run_output_root)
             files_written.append(command.source_file)
             git_guard.after_write("agent: update suggested tags")
             message = "Suggested tags written to agent.suggested_tags."
@@ -116,7 +140,7 @@ def _handle_command(vault: Vault, policy: VaultPolicy, templates_path: Path, git
         if decision.allowed:
             git_guard.before_write()
             updated = merge_agent_frontmatter(source_text, {"agent": {"last_summary": summary}})
-            vault.write_relative(command.source_file, updated)
+            _write_relative(vault, command.source_file, updated, dry_run_output_root)
             files_written.append(command.source_file)
             git_guard.after_write("agent: update note summary")
             message = "Summary written to agent.last_summary."
@@ -128,7 +152,7 @@ def _handle_command(vault: Vault, policy: VaultPolicy, templates_path: Path, git
         decision = policy.evaluate(operation)
         if decision.allowed:
             git_guard.before_write()
-            vault.write_relative(suggestion_path, _render_suggestion(templates_path, command))
+            _write_relative(vault, suggestion_path, _render_suggestion(templates_path, command), dry_run_output_root)
             files_written.append(suggestion_path)
             git_guard.after_write(f"agent: create {command.action} suggestion")
             message = "Suggestion created; source note was not modified."
@@ -143,7 +167,7 @@ def _handle_command(vault: Vault, policy: VaultPolicy, templates_path: Path, git
     log_decision = policy.evaluate(log_op)
     if log_decision.allowed:
         git_guard.before_write()
-        vault.write_relative(log_path, _render_log(templates_path, command, decision.decision, message, files_written))
+        _write_relative(vault, log_path, _render_log(templates_path, command, decision.decision, message, files_written), dry_run_output_root)
         files_written.append(log_path)
         git_guard.after_write("agent: log Hermes command")
 
@@ -163,6 +187,39 @@ def _classify_action(body: str) -> str:
     if "correct folder" in lowered or "move" in lowered or "put this file" in lowered:
         return "move_file"
     return "unknown"
+
+
+def _write_relative(vault: Vault, relative_path: str, content: str, dry_run_output_root: Path | None) -> Path:
+    if dry_run_output_root is None:
+        return vault.write_relative(relative_path, content)
+    target = dry_run_output_root / relative_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    return target
+
+
+def _command_index_key(command: HermesCommand) -> str:
+    digest = hashlib.sha256(command.raw_text.encode("utf-8")).hexdigest()[:16]
+    return f"{command.source_file}|{command.command_id}|{digest}"
+
+
+def _load_command_index(path: Path | None) -> set[str]:
+    if path is None or not path.exists():
+        return set()
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return set()
+    if isinstance(loaded, dict) and isinstance(loaded.get("handled"), list):
+        return {str(item) for item in loaded["handled"]}
+    return set()
+
+
+def _save_command_index(path: Path | None, handled: set[str]) -> None:
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"handled": sorted(handled)}, indent=2), encoding="utf-8")
 
 
 def _strip_quoted_lines(markdown: str) -> str:

@@ -30,10 +30,18 @@ class Vault:
     def __init__(self, root: Path):
         self.root = root.expanduser().resolve()
 
-    def markdown_files(self) -> list[Path]:
+    def markdown_files(self, include_agent: bool = False) -> list[Path]:
         if not self.root.exists():
             return []
-        return sorted(path for path in self.root.rglob("*.md") if ".obsidian" not in path.relative_to(self.root).parts)
+        files = []
+        for path in self.root.rglob("*.md"):
+            parts = path.relative_to(self.root).parts
+            if ".obsidian" in parts:
+                continue
+            if not include_agent and parts and parts[0] == "80_Agent":
+                continue
+            files.append(path)
+        return sorted(files)
 
     def recent_notes(self, days: int = 2) -> list[NoteInfo]:
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)

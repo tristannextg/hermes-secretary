@@ -29,7 +29,16 @@ VAULT_PATH=/srv/obsidian-vault
 DRY_RUN=true
 ```
 
-This permits scans and preview generation while preserving the real vault.
+For Docker, set the host-side mount and keep the vault read-only:
+
+```env
+HOST_VAULT_PATH=/srv/obsidian-vault
+VAULT_MOUNT_MODE=ro
+DRY_RUN=true
+DRY_RUN_WRITE_TO_VAULT=false
+```
+
+In this mode generated previews are written to `state/dry_run_output`, not to the real vault.
 
 ## Narrow Writes
 
@@ -56,7 +65,7 @@ Body edits, moves, renames, human-facing tags, and human-owned frontmatter requi
 docker compose up --build obsidian-ops
 ```
 
-The API binds to `127.0.0.1:${API_PORT_HOST:-8765}` on the host. The compose file does not mount the Docker socket, does not use privileged mode, drops capabilities, and runs as UID 1000.
+The API binds to `127.0.0.1:${API_PORT_HOST:-8765}` on the host. The compose file does not mount the Docker socket, does not use privileged mode, drops capabilities, runs as UID 1000, and mounts the vault read-only by default.
 
 ## Hermes Connection
 

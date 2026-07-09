@@ -29,7 +29,15 @@ def main() -> None:
     elif args.command == "process-commands":
         vault = Vault(settings.vault_path)
         policy = VaultPolicy(settings.vault_path, settings.allowed_write_dirs, settings.max_files_per_operation)
-        results = process_vault_commands(vault, policy, settings.templates_path, GitGuard(settings.vault_path, settings.dry_run))
+        output_root = settings.dry_run_output_path if settings.dry_run and not settings.dry_run_write_to_vault else None
+        results = process_vault_commands(
+            vault,
+            policy,
+            settings.templates_path,
+            GitGuard(settings.vault_path, settings.dry_run),
+            output_root,
+            settings.command_index_path,
+        )
         print({"ok": True, "commands": [result.__dict__ for result in results]})
     elif args.command == "backup":
         print(run_backup_dry_run(str(settings.backup_repository_path) if settings.backup_repository_path else None))

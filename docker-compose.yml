@@ -19,15 +19,18 @@ services:
       TEMPLATES_PATH: /app/templates
       ARTICLE_SOURCES: /app/config/article_sources.yaml
       LEETCODE_STATE_PATH: /state/leetcode_state.json
-      DRY_RUN: "true"
+      COMMAND_INDEX_PATH: /state/command_index.json
+      DRY_RUN: "${DRY_RUN:-true}"
+      DRY_RUN_WRITE_TO_VAULT: "${DRY_RUN_WRITE_TO_VAULT:-false}"
+      DRY_RUN_OUTPUT_PATH: /state/dry_run_output
       API_HOST: 0.0.0.0
       API_PORT: "8765"
     volumes:
-      - ./examples/sample_vault:/vault:rw
+      - ${HOST_VAULT_PATH:-./examples/sample_vault}:/vault:${VAULT_MOUNT_MODE:-ro}
       - ./state:/state:rw
       - ./config:/app/config:ro
       - ./templates:/app/templates:ro
-      - ./examples/sample_repos:/repos:ro
+      - ${HOST_REPOS_PATH:-./examples/sample_repos}:/repos:ro
 
   repo-worker:
     build:
@@ -43,9 +46,9 @@ services:
       - /tmp
     environment:
       REPOS_PATH: /repos
-      DRY_RUN: "true"
+      DRY_RUN: "${DRY_RUN:-true}"
     volumes:
-      - ./examples/sample_repos:/repos:ro
+      - ${HOST_REPOS_PATH:-./examples/sample_repos}:/repos:ro
     command: ["python", "-m", "obsidian_ops.repo_summary"]
 
   backup-worker:
