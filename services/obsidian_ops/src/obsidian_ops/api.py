@@ -119,8 +119,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def read_note(path: str) -> dict:
         vault = _vault()
         resolved = _policy()._resolve(path)
-        if resolved is None or not resolved.exists() or ".obsidian" in resolved.relative_to(vault.root).parts:
+        if resolved is None or (resolved.exists() and ".obsidian" in resolved.relative_to(vault.root).parts):
             return _wrap(settings, {"ok": False, "policy_decision": "blocked", "message": f"Note not readable: {path}", "data": {}})
+        if not resolved.exists():
+            return _wrap(
+                settings,
+                {"ok": False, "policy_decision": "allowed", "message": f"Note does not exist (not a policy block): {path}", "data": {}},
+            )
         return _ok(settings, {"path": path, "content": resolved.read_text(encoding="utf-8", errors="replace")})
 
     @app.get("/tools/recent_note_changes")
