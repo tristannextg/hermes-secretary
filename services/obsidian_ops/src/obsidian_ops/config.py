@@ -41,6 +41,7 @@ class Settings:
     agent_dir: str = "80_Agent"
     daily_dir: str = "10_Daily"
     daily_note_format: str = "%Y/%m/%Y-%m-%d.md"
+    command_scan_exclude: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -84,6 +85,7 @@ class Settings:
             agent_dir=os.environ.get("AGENT_DIR", "80_Agent").strip("/"),
             daily_dir=os.environ.get("DAILY_DIR", "10_Daily").strip("/"),
             daily_note_format=os.environ.get("DAILY_NOTE_FORMAT", "%Y/%m/%Y-%m-%d.md"),
+            command_scan_exclude=tuple(_csv(os.environ.get("COMMAND_SCAN_EXCLUDE", ""))),
         )
 
     @property

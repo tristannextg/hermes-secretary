@@ -38,6 +38,8 @@ def pending_commands(settings: Settings) -> list[HermesCommand]:
     pending = []
     for note in vault.markdown_files():
         relative = note.relative_to(vault.root).as_posix()
+        if relative in settings.command_scan_exclude:
+            continue
         for command in parse_commands(note.read_text(encoding="utf-8", errors="replace"), relative):
             if _command_index_key(command) not in handled:
                 pending.append(command)
@@ -72,6 +74,8 @@ def check_once(settings: Settings, modified_since: float | None = None, notifier
         if modified_since is not None and note.stat().st_mtime < modified_since:
             continue
         relative = note.relative_to(vault.root).as_posix()
+        if relative in settings.command_scan_exclude:
+            continue
         for command in parse_commands(note.read_text(encoding="utf-8", errors="replace"), relative):
             key = _command_index_key(command)
             if key in handled or key in notified:

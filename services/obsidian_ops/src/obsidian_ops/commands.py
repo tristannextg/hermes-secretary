@@ -14,7 +14,11 @@ from .git_guard import GitGuard
 from .policy import Operation, VaultPolicy
 from .vault import Vault
 
-COMMAND_PATTERN = re.compile(r"\[@hermes\s+(?P<body>[^\]]+)\]", re.IGNORECASE)
+# Bracketed form [@hermes ...] or bare "@hermes ..." to end of line.
+COMMAND_PATTERN = re.compile(
+    r"\[@hermes\s+(?P<body>[^\]]+)\]|(?<!\w)@hermes\s+(?P<line>[^\n\]]+)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -41,7 +45,9 @@ def parse_commands(markdown: str, source_file: str) -> list[HermesCommand]:
     commands: list[HermesCommand] = []
     for index, match in enumerate(COMMAND_PATTERN.finditer(_strip_quoted_lines(markdown)), start=1):
         raw = match.group(0)
-        body = match.group("body").strip()
+        body = (match.group("body") or match.group("line") or "").strip()
+        if not body:
+            continue
         action = _classify_action(body)
         risk = 2 if action in {"fix_typos", "move_file"} else 1 if action in {"remind", "suggest_tags", "summarize"} else 0
         commands.append(

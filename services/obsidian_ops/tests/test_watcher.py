@@ -73,3 +73,22 @@ def test_check_once_skips_unmodified_files(tmp_path: Path) -> None:
     settings = make_settings(tmp_path, hermes_wake_url="http://hermes.test/wake")
     future = note.stat().st_mtime + 60
     assert check_once(settings, modified_since=future, notifier=lambda url, commands: True) == []
+
+
+def test_bare_hermes_command_without_brackets(tmp_path: Path) -> None:
+    from obsidian_ops.commands import parse_commands
+
+    commands = parse_commands("Some intro text.\n\n@hermes can you rename the file and put it into a reasonable folder\n", "note.md")
+    assert len(commands) == 1
+    assert commands[0].arguments["text"] == "can you rename the file and put it into a reasonable folder"
+    both = parse_commands("[@hermes remind me to X]\n@hermes also do Y\n", "note.md")
+    assert [c.arguments["text"] for c in both] == ["remind me to X", "also do Y"]
+    assert parse_commands("mail me at tristan@hermesmail.com\n", "note.md") == []
+
+
+def test_command_scan_exclude(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    (vault / "📰 Morning Briefing.md").write_text("Use @hermes remind me to style commands in notes.\n", encoding="utf-8")
+    settings = make_settings(tmp_path, hermes_wake_url="http://hermes.test/wake", command_scan_exclude=("📰 Morning Briefing.md",))
+    assert check_once(settings, notifier=lambda url, commands: True) == []
+    assert pending_commands(settings) == []

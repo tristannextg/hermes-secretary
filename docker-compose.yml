@@ -41,6 +41,7 @@ services:
       DAILY_DIR: "${DAILY_DIR:-10_Daily}"
       DAILY_NOTE_FORMAT: "${DAILY_NOTE_FORMAT:-%Y/%m/%Y-%m-%d.md}"
       AGENT_ALLOWED_WRITE_DIRS: "${AGENT_ALLOWED_WRITE_DIRS:-80_Agent/Briefings,80_Agent/Command Log,80_Agent/Suggestions,10_Daily,90_Attachments/Briefings}"
+      COMMAND_SCAN_EXCLUDE: "${COMMAND_SCAN_EXCLUDE:-}"
     volumes:
       - ${HOST_VAULT_PATH:-./examples/sample_vault}:/vault:${VAULT_MOUNT_MODE:-ro}
       - ./state:/state:rw
