@@ -30,6 +30,12 @@ class Settings:
     max_files_per_operation: int
     api_host: str
     api_port: int
+    hermes_wake_url: str | None = None
+    watch_enabled: bool = False
+    watch_interval_seconds: int = 15
+    watcher_notified_path: Path = Path("state/watcher_notified.json")
+    approval_secret: str | None = None
+    suggestions_state_path: Path = Path("state/suggestions")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -62,6 +68,12 @@ class Settings:
             max_files_per_operation=int(os.environ.get("MAX_FILES_PER_OPERATION", "5")),
             api_host=os.environ.get("API_HOST", "127.0.0.1"),
             api_port=int(os.environ.get("API_PORT", "8765")),
+            hermes_wake_url=os.environ.get("HERMES_WAKE_URL") or None,
+            watch_enabled=os.environ.get("WATCH_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
+            watch_interval_seconds=int(os.environ.get("WATCH_INTERVAL_SECONDS", "15")),
+            watcher_notified_path=Path(os.environ.get("WATCHER_NOTIFIED_PATH", "state/watcher_notified.json")).expanduser(),
+            approval_secret=os.environ.get("APPROVAL_SECRET") or None,
+            suggestions_state_path=Path(os.environ.get("SUGGESTIONS_STATE_PATH", "state/suggestions")).expanduser(),
         )
 
     @property

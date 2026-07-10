@@ -42,6 +42,9 @@ Current remote deployment:
 - Add an authenticated Hermes connector or local-only tunnel.
 - Do not expose shell, Docker socket, arbitrary file write, or delete tools.
 - Give Hermes only the narrow HTTP tools implemented by `obsidian-ops`.
+- Set `APPROVAL_SECRET` in `.env` (e.g. `openssl rand -hex 24`) and give it only to the human-approval flow; without it `/tools/apply_suggestion` is disabled (fail closed).
+- Set `WATCH_ENABLED=true` and `HERMES_WAKE_URL` to the agent's wake endpoint so `@hermes` commands are handled by the agent within seconds.
+- Never mount the vault into the Hermes agent container; it must use only these HTTP tools.
 
 ## Optional next setup
 

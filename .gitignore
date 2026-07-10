@@ -5,3 +5,5 @@ __pycache__/
 *.py[cod]
 state/*.json
 state/dry_run_output/
+*.egg-info/
+state/suggestions/

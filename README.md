@@ -69,15 +69,38 @@ The API binds to `127.0.0.1:${API_PORT_HOST:-8765}` on the host. The compose fil
 
 ## Hermes Connection
 
-Hermes should call the HTTP tools exposed by `obsidian-ops`:
+Hermes (the LLM agent, e.g. Nous Research `hermes-agent`) should call the HTTP tools exposed by `obsidian-ops`:
+
+Read tools:
 
 - `GET /tools/search_notes?query=...`
+- `GET /tools/read_note?path=...`
 - `GET /tools/recent_note_changes`
-- `POST /tools/create_morning_briefing`
 - `GET /tools/summarize_repo_changes`
 - `GET /tools/get_command_status/{source_path}`
+- `GET /tools/pending_commands`
+- `GET /tools/list_suggestions?status=pending`
+
+Guarded write tools:
+
+- `POST /tools/write_agent_note` — agent-authored markdown (briefings, logs) into approved directories only. This is the primary path for LLM-written briefings.
+- `POST /tools/patch_agent_frontmatter` — `agent.*` frontmatter patches on any note.
+- `POST /tools/propose_edit` — record an `edit_body` or `move_file` proposal (suggestion note + stored patch); the source note is never touched.
+- `POST /tools/apply_suggestion` — apply a pending proposal. Requires `approval_token` matching `APPROVAL_SECRET`; fails closed when the secret is unset. Only the human-approval flow (e.g. Telegram approve button) may hold the secret.
+- `POST /tools/reject_suggestion`
+- `POST /tools/mark_command_handled` — record that the agent finished a `@hermes` command so it is not re-processed.
+- `POST /tools/create_morning_briefing` — deterministic fallback briefing. When `HERMES_WAKE_URL` is set the agent owns briefing content and command handling; this endpoint then skips command processing to avoid racing the agent.
 
 Do not give Hermes shell, Docker socket, or full-vault write access.
+
+## Vault Watcher
+
+With `WATCH_ENABLED=true` the API process scans the vault every `WATCH_INTERVAL_SECONDS` for new `@hermes` commands (ignoring `80_Agent/`).
+
+- If `HERMES_WAKE_URL` is set, new commands are POSTed there (`{"event": "hermes_commands_detected", "commands": [...]}`) so the agent reacts within seconds. Commands stay listed in `/tools/pending_commands` until the agent calls `mark_command_handled`, so a crashed agent can catch up by polling.
+- If no wake URL is set, the built-in deterministic handling runs (reminders, tag suggestions, suggestion notes).
+
+For an agent running on the Docker host use `HERMES_WAKE_URL=http://host.docker.internal:PORT/...`.
 
 ## Rollback
 

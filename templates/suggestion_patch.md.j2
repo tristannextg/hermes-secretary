@@ -5,6 +5,8 @@ created: {{ date }}
 source_file: {{ source_file }}
 action: {{ action }}
 risk_level: {{ risk_level }}
+{% if suggestion_id is defined and suggestion_id %}suggestion_id: {{ suggestion_id }}
+{% endif %}
 tags:
   - agent/suggestion
 ---
