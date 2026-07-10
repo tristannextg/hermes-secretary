@@ -40,8 +40,13 @@ def test_body_edits_require_approval(tmp_path: Path) -> None:
 
 
 def test_human_frontmatter_requires_approval(tmp_path: Path) -> None:
-    result = policy(tmp_path).evaluate(Operation("patch_frontmatter", "note.md", frontmatter_patch={"tags": ["work"]}))
+    result = policy(tmp_path).evaluate(Operation("patch_frontmatter", "note.md", frontmatter_patch={"status": "final"}))
     assert result.decision == "requires_approval"
+
+
+def test_tags_frontmatter_is_allowed(tmp_path: Path) -> None:
+    result = policy(tmp_path).evaluate(Operation("patch_frontmatter", "note.md", frontmatter_patch={"tags": ["work"]}))
+    assert result.decision == "allowed"
 
 
 def test_agent_frontmatter_is_allowed(tmp_path: Path) -> None:

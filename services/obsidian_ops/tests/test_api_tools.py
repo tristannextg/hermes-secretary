@@ -217,3 +217,49 @@ def test_custom_agent_and_daily_dirs(tmp_path: Path) -> None:
     daily = vault / "Daily Notes" / f"{datetime.now():%Y-%m-%d}.md"
     assert daily.exists()
     assert "stretch" in daily.read_text(encoding="utf-8")
+
+
+def test_hermes_can_edit_tags_directly(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    note = tmp_path / "vault" / "00_Inbox" / "note.md"
+    note.write_text("---\ntags:\n  - old-tag\nstatus: draft\n---\n# Note\n", encoding="utf-8")
+    response = client.post(
+        "/tools/patch_agent_frontmatter",
+        json={"path": "00_Inbox/note.md", "tags": ["topic/authentication", "#project/fmis"], "reason": "retag"},
+    ).json()
+    assert response["ok"] is True
+    updated = note.read_text(encoding="utf-8")
+    assert "topic/authentication" in updated
+    assert "project/fmis" in updated
+    assert "old-tag" not in updated
+    assert "status: draft" in updated
+
+
+def test_other_human_frontmatter_still_gated(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    note = tmp_path / "vault" / "00_Inbox" / "note.md"
+    note.write_text("---\nstatus: draft\n---\n# Note\n", encoding="utf-8")
+    from obsidian_ops.policy import Operation, VaultPolicy
+
+    policy = VaultPolicy(tmp_path / "vault", ("00_Inbox",))
+    decision = policy.evaluate(
+        Operation("patch_frontmatter", "00_Inbox/note.md", frontmatter_patch={"status": "final"})
+    )
+    assert decision.allowed is False
+    assert decision.decision == "requires_approval"
+
+
+def test_invalid_tags_are_refused(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    note = tmp_path / "vault" / "00_Inbox" / "note.md"
+    note.write_text("# Note\n", encoding="utf-8")
+    bad_spacing = client.post(
+        "/tools/patch_agent_frontmatter",
+        json={"path": "00_Inbox/note.md", "tags": ["has space"]},
+    ).json()
+    assert bad_spacing["ok"] is False
+    too_many = client.post(
+        "/tools/patch_agent_frontmatter",
+        json={"path": "00_Inbox/note.md", "tags": [f"tag{i}" for i in range(25)]},
+    ).json()
+    assert too_many["ok"] is False

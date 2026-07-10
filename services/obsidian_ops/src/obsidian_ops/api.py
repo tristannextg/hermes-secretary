@@ -35,7 +35,8 @@ class WriteNoteRequest(BaseModel):
 
 class FrontmatterPatchRequest(BaseModel):
     path: str
-    patch: dict
+    patch: dict = {}
+    tags: list[str] | None = None
     reason: str = ""
 
 
@@ -145,7 +146,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/tools/patch_agent_frontmatter")
     def patch_frontmatter(request: FrontmatterPatchRequest) -> dict:
         result = patch_agent_frontmatter(
-            _vault(), _policy(), _git_guard(), request.path, request.patch, request.reason, _dry_run_output_root()
+            _vault(), _policy(), _git_guard(), request.path, request.patch, request.reason, _dry_run_output_root(), tags=request.tags
         )
         return _wrap(settings, result)
 

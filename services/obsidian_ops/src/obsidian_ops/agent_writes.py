@@ -52,20 +52,31 @@ def patch_agent_frontmatter(
     patch: dict,
     reason: str,
     dry_run_output_root: Path | None,
+    tags: list[str] | None = None,
 ) -> dict:
     if not (vault.root / relative_path).exists():
         return _refused(f"Note does not exist: {relative_path}")
+    frontmatter_patch: dict = {}
+    if patch:
+        frontmatter_patch["agent"] = patch
+    if tags is not None:
+        frontmatter_patch["tags"] = tags
+    if not frontmatter_patch:
+        return _refused("Nothing to patch: provide agent fields and/or tags.")
     operation = Operation(
         "patch_frontmatter",
         relative_path,
         source="hermes_agent",
-        frontmatter_patch={"agent": patch},
+        frontmatter_patch=frontmatter_patch,
         reason=reason or "Agent frontmatter patch",
     )
     decision = policy.evaluate(operation)
     if not decision.allowed:
         return _envelope(False, decision.operation_id, decision.decision, decision.message)
-    updated = merge_agent_frontmatter(vault.read_relative(relative_path), {"agent": patch})
+    try:
+        updated = merge_agent_frontmatter(vault.read_relative(relative_path), frontmatter_patch)
+    except ValueError as error:
+        return _refused(str(error))
     git_guard.before_write()
     _write_relative(vault, relative_path, updated, dry_run_output_root)
     git_result = git_guard.after_write(f"agent: patch agent.* frontmatter in {relative_path}" + (f" ({reason})" if reason else ""), paths=[relative_path])
@@ -73,8 +84,8 @@ def patch_agent_frontmatter(
         True,
         decision.operation_id,
         decision.decision,
-        "agent.* frontmatter patched.",
-        data={"path": relative_path, "patched_keys": sorted(patch.keys())},
+        "Frontmatter patched.",
+        data={"path": relative_path, "patched_keys": sorted(frontmatter_patch.keys())},
         files_written=[relative_path],
         git_commit=git_result.agent_commit,
     )

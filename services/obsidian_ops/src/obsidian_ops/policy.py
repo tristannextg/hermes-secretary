@@ -65,8 +65,8 @@ class VaultPolicy:
 
         if operation.operation_type == "patch_frontmatter":
             if not self._frontmatter_patch_is_agent_only(operation.frontmatter_patch or {}):
-                return self._requires_approval(operation, resolved_paths[0], "Only agent.* frontmatter fields may be patched automatically.")
-            return self._allowed(operation, resolved_paths[0], "Allowed agent.* frontmatter patch.")
+                return self._requires_approval(operation, resolved_paths[0], "Only agent.* and tags frontmatter fields may be patched automatically.")
+            return self._allowed(operation, resolved_paths[0], "Allowed agent/tags frontmatter patch.")
 
         if operation.operation_type == "create_file":
             rel = resolved_paths[0].relative_to(self.vault_root).as_posix()
@@ -96,7 +96,13 @@ class VaultPolicy:
     def _frontmatter_patch_is_agent_only(self, patch: dict[str, Any]) -> bool:
         if not patch:
             return True
-        return set(patch.keys()) == {"agent"} and isinstance(patch["agent"], dict)
+        if not set(patch.keys()) <= {"agent", "tags"}:
+            return False
+        if "agent" in patch and not isinstance(patch["agent"], dict):
+            return False
+        if "tags" in patch and not (isinstance(patch["tags"], list) and all(isinstance(tag, str) for tag in patch["tags"])):
+            return False
+        return True
 
     def _allowed(self, operation: Operation, resolved: Path, message: str) -> PolicyResult:
         return PolicyResult(True, "allowed", operation.operation_id, message, operation.risk_level, resolved)

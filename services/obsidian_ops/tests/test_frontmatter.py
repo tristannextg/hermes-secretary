@@ -16,4 +16,10 @@ def test_merge_agent_frontmatter_preserves_human_fields() -> None:
 
 def test_rejects_non_agent_patch() -> None:
     with pytest.raises(ValueError):
-        merge_agent_frontmatter("---\n---\nbody", {"tags": ["bad"]})
+        merge_agent_frontmatter("---\n---\nbody", {"status": "final"})
+
+
+def test_tags_patch_is_allowed_and_replaces() -> None:
+    updated = merge_agent_frontmatter("---\ntags:\n  - old\n---\nbody", {"tags": ["#topic/new"]})
+    assert "topic/new" in updated
+    assert "- old" not in updated
