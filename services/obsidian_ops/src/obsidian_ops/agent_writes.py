@@ -32,7 +32,7 @@ def write_agent_note(
         return _envelope(False, decision.operation_id, "blocked", f"Note already exists and overwrite is false: {relative_path}")
     git_guard.before_write()
     written = _write_relative(vault, relative_path, content, dry_run_output_root)
-    git_result = git_guard.after_write(f"agent: write note {relative_path}")
+    git_result = git_guard.after_write(f"agent: write note {relative_path}" + (f" ({reason})" if reason else ""), paths=[relative_path])
     return _envelope(
         True,
         decision.operation_id,
@@ -68,7 +68,7 @@ def patch_agent_frontmatter(
     updated = merge_agent_frontmatter(vault.read_relative(relative_path), {"agent": patch})
     git_guard.before_write()
     _write_relative(vault, relative_path, updated, dry_run_output_root)
-    git_result = git_guard.after_write(f"agent: patch agent.* frontmatter in {relative_path}")
+    git_result = git_guard.after_write(f"agent: patch agent.* frontmatter in {relative_path}" + (f" ({reason})" if reason else ""), paths=[relative_path])
     return _envelope(
         True,
         decision.operation_id,

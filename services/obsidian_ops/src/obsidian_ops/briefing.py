@@ -70,7 +70,7 @@ def create_morning_briefing(settings: Settings, for_date: date | None = None, pr
         }
     git_guard.before_write()
     written = _write_relative(vault, relative, content, dry_run_output_root)
-    git_result = git_guard.after_write("agent: generate morning briefing")
+    git_result = git_guard.after_write("agent: generate morning briefing", paths=[relative])
     return {
         "ok": True,
         "dry_run": settings.dry_run,

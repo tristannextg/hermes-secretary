@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import date
@@ -12,7 +13,7 @@ from .agent_writes import patch_agent_frontmatter, write_agent_note
 from .briefing import create_morning_briefing
 from .config import Settings
 from .commands import parse_commands
-from .git_guard import GitGuard
+from .git_guard import GitGuard, GitGuardError
 from .policy import VaultPolicy
 from .repo_summary import summarize_repos
 from .suggestions import SuggestionStore, apply_suggestion, propose_edit, reject_suggestion
@@ -60,6 +61,12 @@ class RejectSuggestionRequest(BaseModel):
 class MarkHandledRequest(BaseModel):
     source_file: str
     raw_text: str | None = None
+
+
+class RevertCommitRequest(BaseModel):
+    sha: str
+    approval_token: str
+    approved_by: str
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -190,6 +197,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def mark_handled(request: MarkHandledRequest) -> dict:
         marked = mark_commands_handled(settings, request.source_file, request.raw_text)
         return _ok(settings, {"marked_command_ids": marked})
+
+    @app.get("/tools/vault_history")
+    def vault_history(limit: int = 20) -> dict:
+        commits = _git_guard().history(min(limit, 100))
+        return _ok(settings, {"commits": [asdict(commit) for commit in commits]})
+
+    @app.post("/tools/revert_agent_commit")
+    def revert_commit(request: RevertCommitRequest) -> dict:
+        if not settings.approval_secret:
+            return _wrap(settings, {"ok": False, "message": "APPROVAL_SECRET is not configured; revert is disabled."})
+        if not hmac.compare_digest(request.approval_token, settings.approval_secret):
+            return _wrap(settings, {"ok": False, "message": "Invalid approval token."})
+        try:
+            revert_sha = _git_guard().revert_agent_commit(request.sha, request.approved_by)
+        except GitGuardError as error:
+            return _wrap(settings, {"ok": False, "message": str(error)})
+        return _wrap(
+            settings,
+            {
+                "ok": True,
+                "policy_decision": "allowed",
+                "message": f"Agent commit {request.sha[:10]} reverted.",
+                "data": {"revert_commit": revert_sha},
+                "git_commit": revert_sha,
+            },
+        )
 
     @app.get("/tools/summarize_repo_changes")
     def summarize_repo_changes() -> dict:

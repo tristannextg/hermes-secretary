@@ -88,6 +88,8 @@ Guarded write tools:
 - `POST /tools/propose_edit` — record an `edit_body` or `move_file` proposal (suggestion note + stored patch); the source note is never touched.
 - `POST /tools/apply_suggestion` — apply a pending proposal. Requires `approval_token` matching `APPROVAL_SECRET`; fails closed when the secret is unset. Only the human-approval flow (e.g. Telegram approve button) may hold the secret.
 - `POST /tools/reject_suggestion`
+- `GET /tools/vault_history?limit=20` — recent vault commits with a `by_agent` flag (agent commits are authored by "Hermes Agent", prefixed `agent:`, and scoped to the files of one operation).
+- `POST /tools/revert_agent_commit` — undo a single agent commit. Approval-secret gated, refuses non-agent commits, snapshots pending human edits first.
 - `POST /tools/mark_command_handled` — record that the agent finished a `@hermes` command so it is not re-processed.
 - `POST /tools/create_morning_briefing` — deterministic fallback briefing. When `HERMES_WAKE_URL` is set the agent owns briefing content and command handling; this endpoint then skips command processing to avoid racing the agent.
 

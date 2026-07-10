@@ -104,7 +104,7 @@ def _handle_command(
             existing = vault.read_relative(reminder_path) if (vault.root / reminder_path).exists() else f"# {datetime.now().date()}\n\n## Hermes reminders\n"
             _write_relative(vault, reminder_path, existing.rstrip() + reminder_line, dry_run_output_root)
             files_written.append(reminder_path)
-            git_guard.after_write("agent: create Hermes reminder")
+            git_guard.after_write("agent: create Hermes reminder", paths=[reminder_path])
             message = "Reminder created."
         else:
             message = decision.message
@@ -123,7 +123,7 @@ def _handle_command(
             updated = merge_agent_frontmatter(source_text, {"agent": {"suggested_tags": suggested_tags, "confidence": 0.55}})
             _write_relative(vault, command.source_file, updated, dry_run_output_root)
             files_written.append(command.source_file)
-            git_guard.after_write("agent: update suggested tags")
+            git_guard.after_write("agent: update suggested tags", paths=[command.source_file])
             message = "Suggested tags written to agent.suggested_tags."
         else:
             message = decision.message
@@ -142,7 +142,7 @@ def _handle_command(
             updated = merge_agent_frontmatter(source_text, {"agent": {"last_summary": summary}})
             _write_relative(vault, command.source_file, updated, dry_run_output_root)
             files_written.append(command.source_file)
-            git_guard.after_write("agent: update note summary")
+            git_guard.after_write("agent: update note summary", paths=[command.source_file])
             message = "Summary written to agent.last_summary."
         else:
             message = decision.message
@@ -154,7 +154,7 @@ def _handle_command(
             git_guard.before_write()
             _write_relative(vault, suggestion_path, _render_suggestion(templates_path, command), dry_run_output_root)
             files_written.append(suggestion_path)
-            git_guard.after_write(f"agent: create {command.action} suggestion")
+            git_guard.after_write(f"agent: create {command.action} suggestion", paths=[suggestion_path])
             message = "Suggestion created; source note was not modified."
         else:
             message = decision.message
@@ -169,7 +169,7 @@ def _handle_command(
         git_guard.before_write()
         _write_relative(vault, log_path, _render_log(templates_path, command, decision.decision, message, files_written), dry_run_output_root)
         files_written.append(log_path)
-        git_guard.after_write("agent: log Hermes command")
+        git_guard.after_write("agent: log Hermes command", paths=[log_path])
 
     return CommandResult(command, decision.decision, files_written, message)
 

@@ -107,7 +107,7 @@ def propose_edit(
     )
     git_guard.before_write()
     _write_relative(vault, note_path, rendered, dry_run_output_root)
-    git_guard.after_write(f"agent: create {action} suggestion {suggestion_id}")
+    git_guard.after_write(f"agent: create {action} suggestion {suggestion_id}", paths=[note_path])
 
     store.save(
         Suggestion(
@@ -181,7 +181,10 @@ def apply_suggestion(
     else:
         written = [suggestion.target_path or ""]
         _apply_move(vault, suggestion.path, suggestion.target_path or "", dry_run_output_root)
-    git_result = git_guard.after_write(f"agent: apply approved suggestion {suggestion_id} ({suggestion.action}) approved by {approved_by}")
+    git_result = git_guard.after_write(
+        f"agent: apply approved suggestion {suggestion_id} ({suggestion.action}) approved by {approved_by}",
+        paths=[path for path in (suggestion.path, suggestion.target_path) if path],
+    )
 
     suggestion.status = "applied"
     suggestion.resolved_at = datetime.now().isoformat()
