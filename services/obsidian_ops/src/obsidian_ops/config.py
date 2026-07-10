@@ -38,6 +38,9 @@ class Settings:
     suggestions_state_path: Path = Path("state/suggestions")
     github_token: str | None = None
     github_repos: tuple[str, ...] = ()
+    agent_dir: str = "80_Agent"
+    daily_dir: str = "10_Daily"
+    daily_note_format: str = "%Y/%m/%Y-%m-%d.md"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -78,6 +81,9 @@ class Settings:
             suggestions_state_path=Path(os.environ.get("SUGGESTIONS_STATE_PATH", "state/suggestions")).expanduser(),
             github_token=os.environ.get("GITHUB_TOKEN") or None,
             github_repos=tuple(_csv(os.environ.get("GITHUB_REPOS", ""))),
+            agent_dir=os.environ.get("AGENT_DIR", "80_Agent").strip("/"),
+            daily_dir=os.environ.get("DAILY_DIR", "10_Daily").strip("/"),
+            daily_note_format=os.environ.get("DAILY_NOTE_FORMAT", "%Y/%m/%Y-%m-%d.md"),
         )
 
     @property

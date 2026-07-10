@@ -66,6 +66,9 @@ def process_vault_commands(
     git_guard: GitGuard,
     dry_run_output_root: Path | None = None,
     command_index_path: Path | None = None,
+    agent_dir: str = "80_Agent",
+    daily_dir: str = "10_Daily",
+    daily_note_format: str = "%Y/%m/%Y-%m-%d.md",
 ) -> list[CommandResult]:
     results: list[CommandResult] = []
     handled = _load_command_index(command_index_path)
@@ -76,7 +79,9 @@ def process_vault_commands(
             index_key = _command_index_key(command)
             if index_key in handled:
                 continue
-            result = _handle_command(vault, policy, templates_path, git_guard, command, text, dry_run_output_root)
+            result = _handle_command(
+                vault, policy, templates_path, git_guard, command, text, dry_run_output_root, agent_dir, daily_dir, daily_note_format
+            )
             results.append(result)
             handled.add(index_key)
     _save_command_index(command_index_path, handled)
@@ -91,11 +96,14 @@ def _handle_command(
     command: HermesCommand,
     source_text: str,
     dry_run_output_root: Path | None,
+    agent_dir: str = "80_Agent",
+    daily_dir: str = "10_Daily",
+    daily_note_format: str = "%Y/%m/%Y-%m-%d.md",
 ) -> CommandResult:
     files_written: list[str] = []
     message = "Command logged."
     if command.action == "remind":
-        reminder_path = _daily_path(datetime.now())
+        reminder_path = _daily_path(datetime.now(), daily_dir, daily_note_format)
         reminder_line = f"\n- [ ] {command.arguments['text'].removeprefix('remind me to ').strip()} #task #hermes\n"
         operation = Operation("create_file", reminder_path, source="vault_command", reason="Create reminder from @hermes command")
         decision = policy.evaluate(operation)
@@ -147,7 +155,7 @@ def _handle_command(
         else:
             message = decision.message
     elif command.action in {"fix_typos", "move_file"}:
-        suggestion_path = _suggestion_path(command)
+        suggestion_path = _suggestion_path(command, agent_dir)
         operation = Operation("create_file", suggestion_path, source="vault_command", reason=f"Create {command.action} suggestion")
         decision = policy.evaluate(operation)
         if decision.allowed:
@@ -159,10 +167,10 @@ def _handle_command(
         else:
             message = decision.message
     else:
-        decision = policy.evaluate(Operation("create_file", _command_log_path(command), source="vault_command"))
+        decision = policy.evaluate(Operation("create_file", _command_log_path(command, agent_dir), source="vault_command"))
         message = "Unknown command logged only."
 
-    log_path = _command_log_path(command)
+    log_path = _command_log_path(command, agent_dir)
     log_op = Operation("create_file", log_path, source="vault_command", reason="Audit Hermes command")
     log_decision = policy.evaluate(log_op)
     if log_decision.allowed:
@@ -226,18 +234,18 @@ def _strip_quoted_lines(markdown: str) -> str:
     return "\n".join(line for line in markdown.splitlines() if not line.lstrip().startswith(">"))
 
 
-def _daily_path(now: datetime) -> str:
-    return f"10_Daily/{now:%Y/%m/%Y-%m-%d}.md"
+def _daily_path(now: datetime, daily_dir: str = "10_Daily", daily_note_format: str = "%Y/%m/%Y-%m-%d.md") -> str:
+    return f"{daily_dir}/{now.strftime(daily_note_format)}"
 
 
-def _command_log_path(command: HermesCommand) -> str:
+def _command_log_path(command: HermesCommand, agent_dir: str = "80_Agent") -> str:
     now = datetime.now()
-    return f"80_Agent/Command Log/{now:%Y/%m/%Y-%m-%d-%H%M%S}-{command.command_id}.md"
+    return f"{agent_dir}/Command Log/{now:%Y/%m/%Y-%m-%d-%H%M%S}-{command.command_id}.md"
 
 
-def _suggestion_path(command: HermesCommand) -> str:
+def _suggestion_path(command: HermesCommand, agent_dir: str = "80_Agent") -> str:
     now = datetime.now()
-    return f"80_Agent/Suggestions/{now:%Y/%m/%Y-%m-%d-%H%M%S}-{command.command_id}-{command.action}.md"
+    return f"{agent_dir}/Suggestions/{now:%Y/%m/%Y-%m-%d-%H%M%S}-{command.command_id}-{command.action}.md"
 
 
 def _render_log(templates_path: Path, command: HermesCommand, decision: str, message: str, files_written: list[str]) -> str:

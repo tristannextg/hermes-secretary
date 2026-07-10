@@ -72,6 +72,7 @@ def propose_edit(
     target_path: str | None,
     reason: str,
     dry_run_output_root: Path | None,
+    agent_dir: str = "80_Agent",
 ) -> dict:
     if action not in PROPOSABLE_ACTIONS:
         return _envelope(False, None, "blocked", f"Unsupported proposal action: {action}")
@@ -84,7 +85,7 @@ def propose_edit(
 
     suggestion_id = uuid.uuid4().hex[:12]
     now = datetime.now()
-    note_path = f"80_Agent/Suggestions/{now:%Y/%m/%Y-%m-%d-%H%M%S}-{suggestion_id}-{action}.md"
+    note_path = f"{agent_dir}/Suggestions/{now:%Y/%m/%Y-%m-%d-%H%M%S}-{suggestion_id}-{action}.md"
     diff = _diff_preview(vault, action, relative_path, new_content, target_path)
 
     operation = Operation("create_file", note_path, source="hermes_agent", reason=f"Create {action} suggestion")

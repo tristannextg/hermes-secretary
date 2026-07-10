@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 def pending_commands(settings: Settings) -> list[HermesCommand]:
-    vault = Vault(settings.vault_path)
+    vault = Vault(settings.vault_path, settings.agent_dir)
     handled = _load_command_index(settings.command_index_path)
     pending = []
     for note in vault.markdown_files():
@@ -45,7 +45,7 @@ def pending_commands(settings: Settings) -> list[HermesCommand]:
 
 
 def mark_commands_handled(settings: Settings, source_file: str, raw_text: str | None = None) -> list[str]:
-    vault = Vault(settings.vault_path)
+    vault = Vault(settings.vault_path, settings.agent_dir)
     note = vault.root / source_file
     if not note.exists():
         return []
@@ -64,7 +64,7 @@ def mark_commands_handled(settings: Settings, source_file: str, raw_text: str | 
 
 def check_once(settings: Settings, modified_since: float | None = None, notifier=None) -> list[HermesCommand]:
     """One watcher tick. Returns the commands that were newly seen this tick."""
-    vault = Vault(settings.vault_path)
+    vault = Vault(settings.vault_path, settings.agent_dir)
     handled = _load_command_index(settings.command_index_path)
     notified = _load_command_index(settings.watcher_notified_path)
     fresh: list[HermesCommand] = []
@@ -97,6 +97,9 @@ def check_once(settings: Settings, modified_since: float | None = None, notifier
             GitGuard(settings.vault_path, settings.dry_run),
             output_root,
             settings.command_index_path,
+            agent_dir=settings.agent_dir,
+            daily_dir=settings.daily_dir,
+            daily_note_format=settings.daily_note_format,
         )
     return fresh
 

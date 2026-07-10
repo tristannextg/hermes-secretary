@@ -84,7 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Hermes Obsidian Ops", version="0.2.0", lifespan=lifespan)
 
     def _vault() -> Vault:
-        return Vault(settings.vault_path)
+        return Vault(settings.vault_path, settings.agent_dir)
 
     def _policy() -> VaultPolicy:
         return VaultPolicy(settings.vault_path, settings.allowed_write_dirs, settings.max_files_per_operation)
@@ -163,6 +163,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             request.target_path,
             request.reason,
             _dry_run_output_root(),
+            agent_dir=settings.agent_dir,
         )
         return _wrap(settings, result)
 

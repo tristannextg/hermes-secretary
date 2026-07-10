@@ -16,18 +16,28 @@ from .repo_summary import summarize_repos
 from .vault import Vault
 
 
-def briefing_relative_path(for_date: date) -> str:
-    return f"80_Agent/Briefings/{for_date:%Y/%m/%Y-%m-%d} Morning Briefing.md"
+def briefing_relative_path(for_date: date, agent_dir: str = "80_Agent") -> str:
+    return f"{agent_dir}/Briefings/{for_date:%Y/%m/%Y-%m-%d} Morning Briefing.md"
 
 
 def create_morning_briefing(settings: Settings, for_date: date | None = None, process_commands: bool = True) -> dict:
     for_date = for_date or date.today()
-    vault = Vault(settings.vault_path)
+    vault = Vault(settings.vault_path, settings.agent_dir)
     policy = VaultPolicy(settings.vault_path, settings.allowed_write_dirs, settings.max_files_per_operation)
     git_guard = GitGuard(settings.vault_path, settings.dry_run)
     dry_run_output_root = _dry_run_output_root(settings)
     command_results = (
-        process_vault_commands(vault, policy, settings.templates_path, git_guard, dry_run_output_root, settings.command_index_path)
+        process_vault_commands(
+            vault,
+            policy,
+            settings.templates_path,
+            git_guard,
+            dry_run_output_root,
+            settings.command_index_path,
+            agent_dir=settings.agent_dir,
+            daily_dir=settings.daily_dir,
+            daily_note_format=settings.daily_note_format,
+        )
         if process_commands
         else []
     )
@@ -54,7 +64,7 @@ def create_morning_briefing(settings: Settings, for_date: date | None = None, pr
         "command_summary": [{"status": result.command.action, "summary": result.message} for result in command_results],
     }
     content = Environment(loader=FileSystemLoader(str(settings.templates_path)), autoescape=False).get_template("morning_briefing.md.j2").render(**context)
-    relative = briefing_relative_path(for_date)
+    relative = briefing_relative_path(for_date, settings.agent_dir)
     operation = Operation("create_file", relative, source="scheduler", reason="Generate morning briefing")
     decision = policy.evaluate(operation)
     if not decision.allowed:

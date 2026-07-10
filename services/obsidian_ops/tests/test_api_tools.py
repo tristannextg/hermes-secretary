@@ -184,3 +184,36 @@ def test_read_note(tmp_path: Path) -> None:
     assert body["data"]["content"] == "# Readable\n"
     blocked = client.get("/tools/read_note", params={"path": "../outside.md"}).json()
     assert blocked["ok"] is False
+
+
+def test_custom_agent_and_daily_dirs(tmp_path: Path) -> None:
+    from datetime import date, datetime
+
+    from obsidian_ops.briefing import briefing_relative_path
+    from obsidian_ops.watcher import check_once
+
+    assert briefing_relative_path(date(2026, 7, 10), "Hermes") == "Hermes/Briefings/2026/07/2026-07-10 Morning Briefing.md"
+
+    vault = tmp_path / "vault"
+    (vault / "Hermes" / "Briefings").mkdir(parents=True)
+    (vault / "Daily Notes").mkdir(parents=True)
+    settings = make_settings(
+        tmp_path,
+        agent_dir="Hermes",
+        daily_dir="Daily Notes",
+        daily_note_format="%Y-%m-%d.md",
+        allowed_write_dirs=("Hermes/Briefings", "Hermes/Command Log", "Hermes/Suggestions", "Daily Notes"),
+    )
+    client = TestClient(create_app(settings))
+    response = client.post("/tools/write_agent_note", json={"path": "Hermes/Briefings/x.md", "content": "# X"}).json()
+    assert response["ok"] is True
+    blocked = client.post("/tools/write_agent_note", json={"path": "80_Agent/Briefings/x.md", "content": "# X"}).json()
+    assert blocked["ok"] is False
+
+    note = vault / "Daily Notes" / "cmd.md"
+    note.write_text("[@hermes remind me to stretch]\n", encoding="utf-8")
+    results = check_once(settings)
+    assert len(results) == 1
+    daily = vault / "Daily Notes" / f"{datetime.now():%Y-%m-%d}.md"
+    assert daily.exists()
+    assert "stretch" in daily.read_text(encoding="utf-8")

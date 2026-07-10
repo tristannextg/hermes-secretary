@@ -27,7 +27,7 @@ def main() -> None:
         target_date = date.fromisoformat(args.date) if args.date else None
         print(create_morning_briefing(settings, target_date))
     elif args.command == "process-commands":
-        vault = Vault(settings.vault_path)
+        vault = Vault(settings.vault_path, settings.agent_dir)
         policy = VaultPolicy(settings.vault_path, settings.allowed_write_dirs, settings.max_files_per_operation)
         output_root = settings.dry_run_output_path if settings.dry_run and not settings.dry_run_write_to_vault else None
         results = process_vault_commands(
@@ -37,6 +37,9 @@ def main() -> None:
             GitGuard(settings.vault_path, settings.dry_run),
             output_root,
             settings.command_index_path,
+            agent_dir=settings.agent_dir,
+            daily_dir=settings.daily_dir,
+            daily_note_format=settings.daily_note_format,
         )
         print({"ok": True, "commands": [result.__dict__ for result in results]})
     elif args.command == "backup":
