@@ -10,6 +10,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
+from .activity_log import append_activity
 from .agent_writes import _envelope, _write_relative
 from .git_guard import GitGuard
 from .policy import Operation, VaultPolicy
@@ -108,7 +109,11 @@ def propose_edit(
     )
     git_guard.before_write()
     _write_relative(vault, note_path, rendered, dry_run_output_root)
-    git_guard.after_write(f"agent: create {action} suggestion {suggestion_id}", paths=[note_path])
+    target_note = f" → `{target_path}`" if target_path else ""
+    log_path = append_activity(
+        vault, f"Proposed {action} on `{relative_path}`{target_note} (suggestion `{suggestion_id}`)" + (f" — {reason}" if reason else ""), dry_run_output_root
+    )
+    git_guard.after_write(f"agent: create {action} suggestion {suggestion_id}", paths=[note_path, log_path])
 
     store.save(
         Suggestion(
@@ -179,12 +184,15 @@ def apply_suggestion(
     if suggestion.action == "edit_body":
         written = [suggestion.path]
         _write_relative(vault, suggestion.path, suggestion.new_content or "", dry_run_output_root)
+        activity = f"Edited `{suggestion.path}` (suggestion `{suggestion_id}`, approved by {approved_by})"
     else:
         written = [suggestion.target_path or ""]
         _apply_move(vault, suggestion.path, suggestion.target_path or "", dry_run_output_root)
+        activity = f"Moved `{suggestion.path}` → `{suggestion.target_path}` (suggestion `{suggestion_id}`, approved by {approved_by})"
+    log_path = append_activity(vault, activity, dry_run_output_root)
     git_result = git_guard.after_write(
         f"agent: apply approved suggestion {suggestion_id} ({suggestion.action}) approved by {approved_by}",
-        paths=[path for path in (suggestion.path, suggestion.target_path) if path],
+        paths=[path for path in (suggestion.path, suggestion.target_path) if path] + [log_path],
     )
 
     suggestion.status = "applied"
@@ -202,7 +210,14 @@ def apply_suggestion(
     )
 
 
-def reject_suggestion(store: SuggestionStore, suggestion_id: str, rejected_by: str) -> dict:
+def reject_suggestion(
+    store: SuggestionStore,
+    suggestion_id: str,
+    rejected_by: str,
+    vault: Vault | None = None,
+    git_guard: GitGuard | None = None,
+    dry_run_output_root: Path | None = None,
+) -> dict:
     suggestion = store.load(suggestion_id)
     if suggestion is None:
         return _envelope(False, None, "blocked", f"Unknown suggestion: {suggestion_id}")
@@ -212,6 +227,12 @@ def reject_suggestion(store: SuggestionStore, suggestion_id: str, rejected_by: s
     suggestion.resolved_at = datetime.now().isoformat()
     suggestion.approved_by = rejected_by
     store.save(suggestion)
+    if vault is not None and git_guard is not None:
+        git_guard.before_write()
+        log_path = append_activity(
+            vault, f"Rejected suggestion `{suggestion_id}` ({suggestion.action} on `{suggestion.path}`) by {rejected_by}", dry_run_output_root
+        )
+        git_guard.after_write(f"agent: reject suggestion {suggestion_id}", paths=[log_path])
     return _envelope(True, None, "allowed", "Suggestion rejected; nothing was changed.", data={"suggestion_id": suggestion_id})
 
 

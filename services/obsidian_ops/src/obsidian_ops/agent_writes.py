@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .activity_log import append_activity
 from .frontmatter import merge_agent_frontmatter
 from .git_guard import GitGuard
 from .policy import Operation, VaultPolicy
@@ -32,7 +33,12 @@ def write_agent_note(
         return _envelope(False, decision.operation_id, "blocked", f"Note already exists and overwrite is false: {relative_path}")
     git_guard.before_write()
     written = _write_relative(vault, relative_path, content, dry_run_output_root)
-    git_result = git_guard.after_write(f"agent: write note {relative_path}" + (f" ({reason})" if reason else ""), paths=[relative_path])
+    commit_paths = [relative_path]
+    if not relative_path.startswith(f"{vault.agent_dir}/Log/"):
+        commit_paths.append(
+            append_activity(vault, f"Wrote note `{relative_path}`" + (f" — {reason}" if reason else ""), dry_run_output_root)
+        )
+    git_result = git_guard.after_write(f"agent: write note {relative_path}" + (f" ({reason})" if reason else ""), paths=commit_paths)
     return _envelope(
         True,
         decision.operation_id,
@@ -79,7 +85,11 @@ def patch_agent_frontmatter(
         return _refused(str(error))
     git_guard.before_write()
     _write_relative(vault, relative_path, updated, dry_run_output_root)
-    git_result = git_guard.after_write(f"agent: patch agent.* frontmatter in {relative_path}" + (f" ({reason})" if reason else ""), paths=[relative_path])
+    what = " and ".join(sorted(frontmatter_patch.keys())).replace("agent", "agent metadata")
+    log_path = append_activity(vault, f"Updated {what} on `{relative_path}`" + (f" — {reason}" if reason else ""), dry_run_output_root)
+    git_result = git_guard.after_write(
+        f"agent: patch agent.* frontmatter in {relative_path}" + (f" ({reason})" if reason else ""), paths=[relative_path, log_path]
+    )
     return _envelope(
         True,
         decision.operation_id,

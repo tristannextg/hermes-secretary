@@ -263,3 +263,28 @@ def test_invalid_tags_are_refused(tmp_path: Path) -> None:
         json={"path": "00_Inbox/note.md", "tags": [f"tag{i}" for i in range(25)]},
     ).json()
     assert too_many["ok"] is False
+
+
+def test_activity_log_records_operations(tmp_path: Path) -> None:
+    client = _client(tmp_path, approval_secret="s3cret")
+    note = tmp_path / "vault" / "00_Inbox" / "note.md"
+    note.write_text("# Note\n", encoding="utf-8")
+
+    client.post("/tools/write_agent_note", json={"path": "80_Agent/Briefings/b.md", "content": "# B", "reason": "daily briefing"})
+    client.post("/tools/patch_agent_frontmatter", json={"path": "00_Inbox/note.md", "tags": ["topic/x"]})
+    proposed = client.post(
+        "/tools/propose_edit", json={"path": "00_Inbox/note.md", "action": "edit_body", "new_content": "# Edited\n", "reason": "cleanup"}
+    ).json()
+    client.post(
+        "/tools/apply_suggestion",
+        json={"suggestion_id": proposed["data"]["suggestion_id"], "approval_token": "s3cret", "approved_by": "tristan"},
+    )
+
+    from datetime import datetime
+
+    log = (tmp_path / "vault" / "80_Agent" / "Log" / f"{datetime.now():%Y-%m} Activity Log.md").read_text(encoding="utf-8")
+    assert "Wrote note `80_Agent/Briefings/b.md` — daily briefing" in log
+    assert "Updated tags on `00_Inbox/note.md`" in log
+    assert "Proposed edit_body on `00_Inbox/note.md`" in log
+    assert "Edited `00_Inbox/note.md`" in log
+    assert f"## {datetime.now():%Y-%m-%d}" in log

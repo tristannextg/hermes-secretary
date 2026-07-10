@@ -9,6 +9,7 @@ from datetime import date
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from .activity_log import append_activity
 from .agent_writes import patch_agent_frontmatter, write_agent_note
 from .briefing import create_morning_briefing
 from .config import Settings
@@ -194,7 +195,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/tools/reject_suggestion")
     def reject(request: RejectSuggestionRequest) -> dict:
-        return _wrap(settings, reject_suggestion(_store(), request.suggestion_id, request.rejected_by))
+        return _wrap(
+            settings,
+            reject_suggestion(_store(), request.suggestion_id, request.rejected_by, _vault(), _git_guard(), _dry_run_output_root()),
+        )
 
     @app.get("/tools/pending_commands")
     def get_pending_commands() -> dict:
@@ -217,7 +221,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not hmac.compare_digest(request.approval_token, settings.approval_secret):
             return _wrap(settings, {"ok": False, "message": "Invalid approval token."})
         try:
-            revert_sha = _git_guard().revert_agent_commit(request.sha, request.approved_by)
+            guard = _git_guard()
+            revert_sha = guard.revert_agent_commit(request.sha, request.approved_by)
+            log_path = append_activity(
+                _vault(), f"Reverted agent commit `{request.sha[:10]}` (requested by {request.approved_by})", _dry_run_output_root()
+            )
+            guard.after_write(f"agent: log revert of {request.sha[:10]}", paths=[log_path])
         except GitGuardError as error:
             return _wrap(settings, {"ok": False, "message": str(error)})
         return _wrap(

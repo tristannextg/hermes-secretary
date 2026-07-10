@@ -1,12 +1,31 @@
+<p align="right">
+  <img src="docs/assets/hermes-secretary.png" alt="Hermes AI Secretary" width="180">
+</p>
+
 # Hermes Obsidian Ops
 
-Guarded operations layer for a Hermes AI secretary around an Obsidian vault.
+Guarded operations for a Hermes AI secretary working around an Obsidian vault.
 
-Hermes must call this service through narrow tools. It must not write directly to the whole vault.
+Hermes can search notes, read context, prepare briefings, log commands, and propose edits without receiving broad write access to the whole vault. The service is designed to keep the useful parts of an AI assistant while making every risky action narrow, auditable, and reversible.
 
-## Dry-run MVP
+## What It Does
 
-Run locally:
+- Builds morning briefings from vault context, repo activity, articles, and exercises.
+- Watches for `@hermes` commands inside Obsidian notes.
+- Lets Hermes write only to approved agent-owned folders.
+- Records command logs and pending edit suggestions instead of silently changing human notes.
+- Uses Git-backed history for vault writes and agent commit rollback.
+- Keeps the Docker deployment locked down by default: no Docker socket, no privileged mode, dropped capabilities, localhost binding, and read-only vault mounts unless explicitly changed.
+
+## Why It Exists
+
+An Obsidian vault is personal infrastructure. It should be useful to automate, but it should not be handed wholesale to an LLM.
+
+Hermes Obsidian Ops sits between the agent and the vault as a policy layer. Read operations are explicit. Write operations are scoped. Human-owned content stays protected unless an approved workflow applies a suggestion.
+
+## Quick Start
+
+Run the dry-run MVP locally:
 
 ```bash
 cd hermes-obsidian-ops
@@ -18,18 +37,30 @@ pytest services/obsidian_ops/tests
 ./scripts/test_agent_permissions.sh
 ```
 
-Dry-run uses only `examples/sample_vault`. It generates briefings, command logs, and suggestions there.
+Dry-run mode uses only `examples/sample_vault`. It generates briefings, command logs, and suggestions there, so you can inspect the workflow before connecting a real vault.
+
+## Safety Model
+
+Automatic writes are limited to agent-owned or explicitly approved paths:
+
+- `80_Agent/Briefings/`
+- `80_Agent/Command Log/`
+- `80_Agent/Suggestions/`
+- `10_Daily/`
+- `90_Attachments/Briefings/`
+
+Body edits, moves, renames, human-facing tags, and human-owned frontmatter require explicit approval. Hermes should never receive shell access, Docker socket access, or full-vault write access.
 
 ## Real Vault Read-Only Mode
 
-Use your Obsidian sync server/plugin to place a synchronized copy of the vault on the VM, for example `/srv/obsidian-vault`. Start with:
+Use your Obsidian sync server or plugin to place a synchronized copy of the vault on the VM, for example `/srv/obsidian-vault`.
 
 ```env
 VAULT_PATH=/srv/obsidian-vault
 DRY_RUN=true
 ```
 
-For Docker, set the host-side mount and keep the vault read-only:
+For Docker, keep the host vault mounted read-only:
 
 ```env
 HOST_VAULT_PATH=/srv/obsidian-vault
@@ -40,36 +71,17 @@ DRY_RUN_WRITE_TO_VAULT=false
 
 In this mode generated previews are written to `state/dry_run_output`, not to the real vault.
 
-## Narrow Writes
-
-Only enable non-dry-run after:
-
-- the vault directory is a Git repository
-- a baseline commit exists
-- backup tooling is configured
-- Docker/systemd mounts expose only approved write paths
-
-Allowed automatic write locations are:
-
-- `80_Agent/Briefings/`
-- `80_Agent/Command Log/`
-- `80_Agent/Suggestions/`
-- `10_Daily/`
-- `90_Attachments/Briefings/`
-
-Body edits, moves, renames, human-facing tags, and human-owned frontmatter require explicit approval.
-
 ## Docker
 
 ```bash
 docker compose up --build obsidian-ops
 ```
 
-The API binds to `127.0.0.1:${API_PORT_HOST:-8765}` on the host. The compose file does not mount the Docker socket, does not use privileged mode, drops capabilities, runs as UID 1000, and mounts the vault read-only by default.
+The API binds to `127.0.0.1:${API_PORT_HOST:-8765}` on the host. The compose file avoids privileged mode, drops Linux capabilities, runs as UID 1000, and mounts the vault read-only by default.
 
-## Hermes Connection
+## Hermes Tool Surface
 
-Hermes (the LLM agent, e.g. Nous Research `hermes-agent`) should call the HTTP tools exposed by `obsidian-ops`:
+Hermes should call the HTTP tools exposed by `obsidian-ops`.
 
 Read tools:
 
@@ -83,30 +95,42 @@ Read tools:
 
 Guarded write tools:
 
-- `POST /tools/write_agent_note` — agent-authored markdown (briefings, logs) into approved directories only. This is the primary path for LLM-written briefings.
-- `POST /tools/patch_agent_frontmatter` — `agent.*` frontmatter patches on any note.
-- `POST /tools/propose_edit` — record an `edit_body` or `move_file` proposal (suggestion note + stored patch); the source note is never touched.
-- `POST /tools/apply_suggestion` — apply a pending proposal. Requires `approval_token` matching `APPROVAL_SECRET`; fails closed when the secret is unset. Only the human-approval flow (e.g. Telegram approve button) may hold the secret.
-- `POST /tools/reject_suggestion`
-- `GET /tools/vault_history?limit=20` — recent vault commits with a `by_agent` flag (agent commits are authored by "Hermes Agent", prefixed `agent:`, and scoped to the files of one operation).
-- `POST /tools/revert_agent_commit` — undo a single agent commit. Approval-secret gated, refuses non-agent commits, snapshots pending human edits first.
-- `POST /tools/mark_command_handled` — record that the agent finished a `@hermes` command so it is not re-processed.
-- `POST /tools/create_morning_briefing` — deterministic fallback briefing. When `HERMES_WAKE_URL` is set the agent owns briefing content and command handling; this endpoint then skips command processing to avoid racing the agent.
-
-Do not give Hermes shell, Docker socket, or full-vault write access.
+- `POST /tools/write_agent_note` writes agent-authored markdown into approved directories.
+- `POST /tools/patch_agent_frontmatter` patches `agent.*` frontmatter on any note.
+- `POST /tools/propose_edit` records an edit or move proposal without touching the source note.
+- `POST /tools/apply_suggestion` applies an approved proposal with `APPROVAL_SECRET`.
+- `POST /tools/reject_suggestion` rejects a pending proposal.
+- `GET /tools/vault_history?limit=20` lists recent vault commits with agent metadata.
+- `POST /tools/revert_agent_commit` reverts a single approved agent commit.
+- `POST /tools/mark_command_handled` marks an `@hermes` command as completed.
+- `POST /tools/create_morning_briefing` creates the deterministic fallback briefing.
 
 ## Vault Watcher
 
-With `WATCH_ENABLED=true` the API process scans the vault every `WATCH_INTERVAL_SECONDS` for new `@hermes` commands (ignoring `80_Agent/`).
+With `WATCH_ENABLED=true`, the API scans the vault every `WATCH_INTERVAL_SECONDS` for new `@hermes` commands, excluding `80_Agent/`.
 
-- If `HERMES_WAKE_URL` is set, new commands are POSTed there (`{"event": "hermes_commands_detected", "commands": [...]}`) so the agent reacts within seconds. Commands stay listed in `/tools/pending_commands` until the agent calls `mark_command_handled`, so a crashed agent can catch up by polling.
-- If no wake URL is set, the built-in deterministic handling runs (reminders, tag suggestions, suggestion notes).
+If `HERMES_WAKE_URL` is set, new commands are posted there:
 
-For an agent running on the Docker host use `HERMES_WAKE_URL=http://host.docker.internal:PORT/...`.
+```json
+{
+  "event": "hermes_commands_detected",
+  "commands": []
+}
+```
+
+Commands remain visible through `/tools/pending_commands` until Hermes calls `mark_command_handled`, so a restarted agent can catch up by polling.
+
+For an agent running on the Docker host, use:
+
+```env
+HERMES_WAKE_URL=http://host.docker.internal:PORT/...
+```
 
 ## Rollback
 
-For non-dry-run writes the Git guard requires the vault to be initialized with Git and creates commits around applied writes. Initialize once with:
+For non-dry-run writes, the Git guard requires the vault to be initialized as a Git repository and creates scoped commits around applied writes.
+
+Initialize once:
 
 ```bash
 scripts/init_vault_git.sh /srv/obsidian-vault
@@ -114,10 +138,12 @@ scripts/init_vault_git.sh /srv/obsidian-vault
 
 The backup worker is a dry-run placeholder until restic or Borg credentials are configured.
 
-## Manual Configuration Still Needed
+## Manual Configuration
 
-- Configure the Obsidian sync community plugin on the VM so the vault appears at the chosen `VAULT_PATH`.
+Before real operation:
+
+- Configure Obsidian sync on the VM so the vault appears at `VAULT_PATH`.
 - Create `.env` from `.env.example` on the VM.
-- Decide real `REPOS_PATH` and which repositories to mount read-only.
+- Set `REPOS_PATH` and mount only the repositories Hermes may summarize.
 - Configure restic or Borg credentials before disabling dry-run writes.
 - Add authentication before exposing the API beyond localhost.
