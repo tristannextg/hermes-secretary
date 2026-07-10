@@ -15,7 +15,7 @@ from .config import Settings
 from .commands import parse_commands
 from .git_guard import GitGuard, GitGuardError
 from .policy import VaultPolicy
-from .repo_summary import summarize_repos
+from .repo_summary import github_activity, summarize_repos
 from .suggestions import SuggestionStore, apply_suggestion, propose_edit, reject_suggestion
 from .vault import Vault
 from .watcher import mark_commands_handled, pending_commands, watch_loop
@@ -225,9 +225,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.get("/tools/summarize_repo_changes")
-    def summarize_repo_changes() -> dict:
+    def summarize_repo_changes(since_hours: int = 48) -> dict:
         repos = [repo.__dict__ for repo in summarize_repos(settings.repos_path)]
-        return _ok(settings, {"repos": repos})
+        github = [asdict(item) for item in github_activity(settings.github_token, settings.github_repos, since_hours)]
+        return _ok(settings, {"repos": repos, "github": github})
 
     @app.get("/tools/get_command_status/{source_path:path}")
     def get_command_status(source_path: str) -> dict:

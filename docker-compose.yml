@@ -35,6 +35,8 @@ services:
       HERMES_WAKE_URL: "${HERMES_WAKE_URL:-}"
       APPROVAL_SECRET: "${APPROVAL_SECRET:-}"
       SUGGESTIONS_STATE_PATH: /state/suggestions
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+      GITHUB_REPOS: "${GITHUB_REPOS:-}"
     volumes:
       - ${HOST_VAULT_PATH:-./examples/sample_vault}:/vault:${VAULT_MOUNT_MODE:-ro}
       - ./state:/state:rw

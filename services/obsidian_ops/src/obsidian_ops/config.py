@@ -36,6 +36,8 @@ class Settings:
     watcher_notified_path: Path = Path("state/watcher_notified.json")
     approval_secret: str | None = None
     suggestions_state_path: Path = Path("state/suggestions")
+    github_token: str | None = None
+    github_repos: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -74,6 +76,8 @@ class Settings:
             watcher_notified_path=Path(os.environ.get("WATCHER_NOTIFIED_PATH", "state/watcher_notified.json")).expanduser(),
             approval_secret=os.environ.get("APPROVAL_SECRET") or None,
             suggestions_state_path=Path(os.environ.get("SUGGESTIONS_STATE_PATH", "state/suggestions")).expanduser(),
+            github_token=os.environ.get("GITHUB_TOKEN") or None,
+            github_repos=tuple(_csv(os.environ.get("GITHUB_REPOS", ""))),
         )
 
     @property
