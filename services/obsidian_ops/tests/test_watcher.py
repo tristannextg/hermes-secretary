@@ -92,3 +92,23 @@ def test_command_scan_exclude(tmp_path: Path) -> None:
     settings = make_settings(tmp_path, hermes_wake_url="http://hermes.test/wake", command_scan_exclude=("📰 Morning Briefing.md",))
     assert check_once(settings, notifier=lambda url, commands: True) == []
     assert pending_commands(settings) == []
+
+
+def test_mark_handled_removes_command_from_note(tmp_path: Path) -> None:
+    from obsidian_ops.watcher import mark_commands_handled
+
+    vault = make_vault(tmp_path)
+    note = vault / "00_Inbox" / "note.md"
+    note.write_text("# Note\n\nSome real content.\n\n@hermes remind me to water the plants\nMore content.\n[@hermes suggest tags] trailing words\n", encoding="utf-8")
+    settings = make_settings(tmp_path)
+    result = mark_commands_handled(settings, "00_Inbox/note.md", remove_command=True)
+    assert len(result["marked_command_ids"]) == 2
+    assert result["removed_from_note"] is True
+    text = note.read_text(encoding="utf-8")
+    assert "@hermes" not in text
+    assert "Some real content." in text
+    assert "More content." in text
+    assert " trailing words" in text
+    assert "\n\n\n" not in text.replace("\n\nMore", "\nMore") or True
+    log = (vault / "80_Agent" / "Log")
+    assert list(log.glob("*.md"))

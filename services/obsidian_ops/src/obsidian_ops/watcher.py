@@ -46,22 +46,68 @@ def pending_commands(settings: Settings) -> list[HermesCommand]:
     return pending
 
 
-def mark_commands_handled(settings: Settings, source_file: str, raw_text: str | None = None) -> list[str]:
+def mark_commands_handled(
+    settings: Settings, source_file: str, raw_text: str | None = None, remove_command: bool = False
+) -> dict:
     vault = Vault(settings.vault_path, settings.agent_dir)
     note = vault.root / source_file
     if not note.exists():
-        return []
+        return {"marked_command_ids": [], "removed_from_note": False}
     handled = _load_command_index(settings.command_index_path)
     marked = []
-    for command in parse_commands(note.read_text(encoding="utf-8", errors="replace"), source_file):
+    to_remove = []
+    text = note.read_text(encoding="utf-8", errors="replace")
+    for command in parse_commands(text, source_file):
         if raw_text is not None and command.raw_text != raw_text:
             continue
         key = _command_index_key(command)
         if key not in handled:
             handled.add(key)
             marked.append(command.command_id)
+        to_remove.append(command.raw_text)
     _save_command_index(settings.command_index_path, handled)
-    return marked
+
+    removed = False
+    if remove_command and to_remove:
+        cleaned = _remove_command_text(text, to_remove)
+        if cleaned != text:
+            from .activity_log import append_activity
+            from .git_guard import GitGuard
+
+            output_root = settings.dry_run_output_path if settings.dry_run and not settings.dry_run_write_to_vault else None
+            git_guard = GitGuard(settings.vault_path, settings.dry_run)
+            git_guard.before_write()
+            if output_root is None:
+                vault.write_relative(source_file, cleaned)
+            else:
+                target = output_root / source_file
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(cleaned, encoding="utf-8")
+            log_path = append_activity(vault, f"Removed handled @hermes command(s) from `{source_file}`", output_root)
+            git_guard.after_write(f"agent: remove handled @hermes command from {source_file}", paths=[source_file, log_path])
+            removed = True
+    return {"marked_command_ids": marked, "removed_from_note": removed}
+
+
+def _remove_command_text(text: str, raw_commands: list[str]) -> str:
+    """Strip exact command occurrences; drop lines left empty (or bare list markers)."""
+    lines = text.splitlines(keepends=False)
+    cleaned_lines = []
+    for line in lines:
+        original = line
+        for raw in raw_commands:
+            if "\n" not in raw and raw in line:
+                line = line.replace(raw, "")
+        if line != original and line.strip() in {"", "-", "*", ">"}:
+            continue
+        cleaned_lines.append(line)
+    cleaned = "\n".join(cleaned_lines)
+    if text.endswith("\n") and not cleaned.endswith("\n"):
+        cleaned += "\n"
+    for raw in raw_commands:
+        if "\n" in raw:
+            cleaned = cleaned.replace(raw, "")
+    return cleaned
 
 
 def check_once(settings: Settings, modified_since: float | None = None, notifier=None) -> list[HermesCommand]:
