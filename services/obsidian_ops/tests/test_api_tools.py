@@ -47,7 +47,7 @@ def test_write_agent_note_requires_overwrite_for_existing(tmp_path: Path) -> Non
     assert response.json()["ok"] is False
     response = client.post("/tools/write_agent_note", json={"path": "80_Agent/Briefings/note.md", "content": "new", "overwrite": True})
     assert response.json()["ok"] is True
-    assert existing.read_text(encoding="utf-8") == "new"
+    assert existing.read_text(encoding="utf-8") == "new\n"
 
 
 def test_write_agent_note_dry_run_preview_does_not_touch_vault(tmp_path: Path) -> None:

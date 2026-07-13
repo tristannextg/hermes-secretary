@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from .activity_log import append_activity
 from .agent_writes import patch_agent_frontmatter, write_agent_note
+from .note_ages import annotate_with_ages
 from .briefing import create_morning_briefing
 from .config import Settings
 from .commands import parse_commands
@@ -118,7 +119,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return _ok(settings, {"matches": matches[:limit]})
 
     @app.get("/tools/read_note")
-    def read_note(path: str) -> dict:
+    def read_note(path: str, with_ages: bool = False) -> dict:
         vault = _vault()
         resolved = _policy()._resolve(path)
         if resolved is None or (resolved.exists() and ".obsidian" in resolved.relative_to(vault.root).parts):
@@ -128,6 +129,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 settings,
                 {"ok": False, "policy_decision": "allowed", "message": f"Note does not exist (not a policy block): {path}", "data": {}},
             )
+        relative = resolved.relative_to(vault.root).as_posix()
+        if with_ages:
+            return _ok(settings, {"path": path, **annotate_with_ages(vault.root, relative)})
         return _ok(settings, {"path": path, "content": resolved.read_text(encoding="utf-8", errors="replace")})
 
     @app.get("/tools/recent_note_changes")

@@ -182,8 +182,10 @@ def apply_suggestion(
 
     git_guard.before_write()
     if suggestion.action == "edit_body":
+        from .mdlint import normalize_markdown
+
         written = [suggestion.path]
-        _write_relative(vault, suggestion.path, suggestion.new_content or "", dry_run_output_root)
+        _write_relative(vault, suggestion.path, normalize_markdown(suggestion.new_content or ""), dry_run_output_root)
         activity = f"Edited `{suggestion.path}` (suggestion `{suggestion_id}`, approved by {approved_by})"
     else:
         written = [suggestion.target_path or ""]

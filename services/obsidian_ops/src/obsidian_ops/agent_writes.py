@@ -4,6 +4,7 @@ from pathlib import Path
 
 from .activity_log import append_activity
 from .frontmatter import merge_agent_frontmatter
+from .mdlint import normalize_markdown
 from .git_guard import GitGuard
 from .policy import Operation, VaultPolicy
 from .vault import Vault
@@ -32,7 +33,7 @@ def write_agent_note(
     if not overwrite and (vault.root / relative_path).exists():
         return _envelope(False, decision.operation_id, "blocked", f"Note already exists and overwrite is false: {relative_path}")
     git_guard.before_write()
-    written = _write_relative(vault, relative_path, content, dry_run_output_root)
+    written = _write_relative(vault, relative_path, normalize_markdown(content), dry_run_output_root)
     commit_paths = [relative_path]
     if not relative_path.startswith(f"{vault.agent_dir}/Log/"):
         commit_paths.append(
