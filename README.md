@@ -57,7 +57,7 @@ The Obsidian Ops service sits between Hermes and the vault. Reads are explicit. 
 Run the dry-run workflow locally:
 
 ```bash
-cd hermes-obsidian-ops
+cd hermes-ai-secretary
 python -m venv .venv
 . .venv/bin/activate
 pip install -e services/obsidian_ops[test]

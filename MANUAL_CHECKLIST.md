@@ -3,7 +3,7 @@
 Current remote deployment:
 
 - Host: `nxguide-dev-cloud`
-- Path: `~/hermes-obsidian-ops`
+- Path: `~/hermes-ai-secretary`
 - Mode: dry-run, sample vault only
 - API: `http://127.0.0.1:8766`
 
@@ -12,7 +12,7 @@ Current remote deployment:
 - Configure your Obsidian sync community plugin on `nxguide-dev-cloud`.
 - Sync the real vault to a stable VM path, for example `/srv/obsidian-vault` or `~/obsidian-vault`.
 - Confirm the sync tool does not require secrets committed into this repo.
-- Create or update `~/hermes-obsidian-ops/.env`:
+- Create or update `~/hermes-ai-secretary/.env`:
   - `HOST_VAULT_PATH=/path/to/real/vault`
   - `HOST_REPOS_PATH=/path/to/read-only/repos`
   - `VAULT_MOUNT_MODE=ro`
@@ -20,7 +20,7 @@ Current remote deployment:
   - `DRY_RUN_WRITE_TO_VAULT=false`
   - keep `API_PORT_HOST=8766` unless you want another local port
 - Restart Docker Compose and call the briefing endpoint while `DRY_RUN=true`.
-- Review previews under `~/hermes-obsidian-ops/state/dry_run_output`.
+- Review previews under `~/hermes-ai-secretary/state/dry_run_output`.
 
 ## Required before enabling writes
 
