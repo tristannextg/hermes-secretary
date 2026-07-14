@@ -61,6 +61,8 @@ def patch_agent_frontmatter(
     dry_run_output_root: Path | None,
     tags: list[str] | None = None,
 ) -> dict:
+    if not relative_path.endswith(".md"):
+        return _refused("Frontmatter patches only apply to .md notes (not canvases).")
     if not (vault.root / relative_path).exists():
         return _refused(f"Note does not exist: {relative_path}")
     frontmatter_patch: dict = {}

@@ -21,8 +21,10 @@ from .commands import (
     _command_index_key,
     _load_command_index,
     _save_command_index,
+    parse_canvas_commands,
     parse_commands,
     process_vault_commands,
+    remove_canvas_command_text,
 )
 from .config import Settings
 from .git_guard import GitGuard
@@ -36,11 +38,12 @@ def pending_commands(settings: Settings) -> list[HermesCommand]:
     vault = Vault(settings.vault_path, settings.agent_dir, settings.trash_dir)
     handled = _load_command_index(settings.command_index_path)
     pending = []
-    for note in vault.markdown_files():
+    for note in vault.markdown_files() + vault.canvas_files():
         relative = note.relative_to(vault.root).as_posix()
         if relative in settings.command_scan_exclude:
             continue
-        for command in parse_commands(note.read_text(encoding="utf-8", errors="replace"), relative):
+        parser = parse_canvas_commands if note.suffix == ".canvas" else parse_commands
+        for command in parser(note.read_text(encoding="utf-8", errors="replace"), relative):
             if _command_index_key(command) not in handled:
                 pending.append(command)
     return pending
@@ -56,8 +59,9 @@ def mark_commands_handled(
     handled = _load_command_index(settings.command_index_path)
     marked = []
     to_remove = []
+    is_canvas = note.suffix == ".canvas"
     text = note.read_text(encoding="utf-8", errors="replace")
-    for command in parse_commands(text, source_file):
+    for command in (parse_canvas_commands if is_canvas else parse_commands)(text, source_file):
         if raw_text is not None and command.raw_text != raw_text:
             continue
         key = _command_index_key(command)
@@ -69,7 +73,7 @@ def mark_commands_handled(
 
     removed = False
     if remove_command and to_remove:
-        cleaned = _remove_command_text(text, to_remove)
+        cleaned = remove_canvas_command_text(text, to_remove) if is_canvas else _remove_command_text(text, to_remove)
         if cleaned != text:
             from .activity_log import append_activity
             from .git_guard import GitGuard
@@ -116,13 +120,14 @@ def check_once(settings: Settings, modified_since: float | None = None, notifier
     handled = _load_command_index(settings.command_index_path)
     notified = _load_command_index(settings.watcher_notified_path)
     fresh: list[HermesCommand] = []
-    for note in vault.markdown_files():
+    for note in vault.markdown_files() + vault.canvas_files():
         if modified_since is not None and note.stat().st_mtime < modified_since:
             continue
         relative = note.relative_to(vault.root).as_posix()
         if relative in settings.command_scan_exclude:
             continue
-        for command in parse_commands(note.read_text(encoding="utf-8", errors="replace"), relative):
+        parser = parse_canvas_commands if note.suffix == ".canvas" else parse_commands
+        for command in parser(note.read_text(encoding="utf-8", errors="replace"), relative):
             key = _command_index_key(command)
             if key in handled or key in notified:
                 continue

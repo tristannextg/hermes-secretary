@@ -303,3 +303,45 @@ def _summarize_body(text: str) -> str:
     body = re.sub(r"^---.*?---", "", text, flags=re.DOTALL).strip()
     words = body.replace("\n", " ").split()
     return " ".join(words[:32]) + ("..." if len(words) > 32 else "")
+
+
+def parse_canvas_commands(raw_json: str, source_file: str) -> list[HermesCommand]:
+    """Parse @hermes commands from text cards inside an Obsidian .canvas file."""
+    try:
+        canvas = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return []
+    texts = [
+        node.get("text", "")
+        for node in canvas.get("nodes", [])
+        if isinstance(node, dict) and node.get("type") == "text" and node.get("text")
+    ]
+    if not texts:
+        return []
+    return parse_commands("\n\n".join(texts), source_file)
+
+
+def remove_canvas_command_text(raw_json: str, raw_commands: list[str]) -> str:
+    """Strip exact command occurrences from canvas text nodes; JSON structure untouched."""
+    try:
+        canvas = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return raw_json
+    changed = False
+    for node in canvas.get("nodes", []):
+        if not (isinstance(node, dict) and node.get("type") == "text" and node.get("text")):
+            continue
+        original = node["text"]
+        text = original
+        for raw in raw_commands:
+            text = text.replace(raw, "")
+        if text == original:
+            continue
+        original_lines = original.splitlines()
+        cleaned = [
+            line for line in text.splitlines()
+            if not (line.strip() in {"", "-", "*", ">"} and line not in original_lines)
+        ]
+        node["text"] = "\n".join(cleaned).strip()
+        changed = True
+    return json.dumps(canvas, indent="\t", ensure_ascii=False) if changed else raw_json

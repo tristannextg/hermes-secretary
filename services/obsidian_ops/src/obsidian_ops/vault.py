@@ -47,6 +47,17 @@ class Vault:
             files.append(path)
         return sorted(files)
 
+    def canvas_files(self) -> list[Path]:
+        if not self.root.exists():
+            return []
+        files = []
+        for path in self.root.rglob("*.canvas"):
+            parts = path.relative_to(self.root).parts
+            if ".obsidian" in parts or (parts and parts[0] in {self.trash_dir, self.agent_dir}):
+                continue
+            files.append(path)
+        return sorted(files)
+
     def recent_notes(self, days: int = 2) -> list[NoteInfo]:
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         notes = []

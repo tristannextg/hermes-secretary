@@ -81,6 +81,8 @@ def propose_edit(
         return _envelope(False, None, "blocked", f"Source note does not exist: {relative_path}")
     if action == "edit_body" and new_content is None:
         return _envelope(False, None, "blocked", "edit_body proposals require new_content.")
+    if action == "edit_body" and not relative_path.endswith(".md"):
+        return _envelope(False, None, "blocked", "edit_body only applies to .md notes; canvases must be edited by hand.")
     if action == "move_file" and not target_path:
         return _envelope(False, None, "blocked", "move_file proposals require target_path.")
 
