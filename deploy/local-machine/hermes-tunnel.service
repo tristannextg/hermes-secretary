@@ -1,0 +1,15 @@
+[Unit]
+Description=SSH tunnel: http://hermes.local:9119 -> Hermes dashboard on nxguide-dev-cloud
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/ssh -N \
+  -i %h/.ssh/hermes_tunnel_ed25519 \
+  -o IdentitiesOnly=yes -o BatchMode=yes -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+  -L 127.0.0.1:19119:127.0.0.1:9119 nxguide-dev-cloud
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=default.target

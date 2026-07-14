@@ -1,0 +1,9 @@
+services:
+  obsidian-ops:
+    environment:
+      VAULT_PATH: /home/vmadmin/obsidian-vault
+    volumes:
+    - /home/vmadmin/obsidian-vault:/home/vmadmin/obsidian-vault:rw
+    - /home/vmadmin/vault-git:/home/vmadmin/vault-git:rw
+    ports:
+    - 172.17.0.1:8766:8765

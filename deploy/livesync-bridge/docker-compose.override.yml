@@ -1,0 +1,5 @@
+services:
+  bridge:
+    user: "1000:1000"
+    volumes:
+      - /home/vmadmin/obsidian-vault:/app/data/vault

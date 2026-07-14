@@ -1,0 +1,11 @@
+[Unit]
+Description=Hermes Agent Web Dashboard (loopback only)
+After=network-online.target
+
+[Service]
+ExecStart=/home/vmadmin/.local/bin/hermes dashboard --host 127.0.0.1 --port 9119 --no-open
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

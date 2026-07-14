@@ -1,0 +1,2 @@
+0 4 * * * cd /home/vmadmin/livesync-bridge && /usr/bin/docker compose restart >/dev/null 2>&1
+15 * * * * /home/vmadmin/vault-snapshot.sh >/dev/null 2>&1

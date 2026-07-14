@@ -1,0 +1,20 @@
+{
+  "peers": [
+    {
+      "type": "couchdb",
+      "name": "obsidian-vault",
+      "url": "https://COUCHDB-HOST:5984",
+      "database": "DATABASE_NAME",
+      "username": "USERNAME",
+      "password": "PASSWORD",
+      "passphrase": "E2E_PASSPHRASE_OR_EMPTY",
+      "obfuscatePassphrase": "E2E_PASSPHRASE_OR_EMPTY",
+      "baseDir": ""
+    },
+    {
+      "type": "storage",
+      "name": "vm-folder",
+      "baseDir": "/srv/obsidian-vault/"
+    }
+  ]
+}
