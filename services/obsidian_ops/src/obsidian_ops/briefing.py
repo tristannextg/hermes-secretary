@@ -22,7 +22,7 @@ def briefing_relative_path(for_date: date, agent_dir: str = "80_Agent") -> str:
 
 def create_morning_briefing(settings: Settings, for_date: date | None = None, process_commands: bool = True) -> dict:
     for_date = for_date or date.today()
-    vault = Vault(settings.vault_path, settings.agent_dir)
+    vault = Vault(settings.vault_path, settings.agent_dir, settings.trash_dir)
     policy = VaultPolicy(settings.vault_path, settings.allowed_write_dirs, settings.max_files_per_operation)
     git_guard = GitGuard(settings.vault_path, settings.dry_run)
     dry_run_output_root = _dry_run_output_root(settings)

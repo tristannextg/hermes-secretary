@@ -133,3 +133,83 @@ def _envelope(
         "files_written": files_written or [],
         "git_commit": git_commit,
     }
+
+
+def move_note(
+    vault: Vault,
+    policy: VaultPolicy,
+    git_guard: GitGuard,
+    relative_path: str,
+    target_path: str,
+    reason: str,
+    dry_run_output_root: Path | None,
+) -> dict:
+    """Direct move/rename. Reversible via git, so no approval needed (2026-07-14)."""
+    source = vault.root / relative_path
+    if not source.exists():
+        return _refused(f"Source note does not exist: {relative_path}")
+    operation = Operation(
+        "move_file",
+        relative_path,
+        source="hermes_agent",
+        paths_affected=(relative_path, target_path),
+        reason=reason or "Agent move",
+    )
+    decision = policy.evaluate(operation)
+    if not decision.allowed:
+        return _envelope(False, decision.operation_id, decision.decision, decision.message)
+    if (vault.root / target_path).exists():
+        return _envelope(False, decision.operation_id, "blocked", f"Move target already exists: {target_path}")
+    git_guard.before_write()
+    if dry_run_output_root is None:
+        target_absolute = vault.root / target_path
+        target_absolute.parent.mkdir(parents=True, exist_ok=True)
+        source.rename(target_absolute)
+    else:
+        preview = dry_run_output_root / target_path
+        preview.parent.mkdir(parents=True, exist_ok=True)
+        preview.write_text(source.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+    log_path = append_activity(
+        vault, f"Moved `{relative_path}` → `{target_path}`" + (f" — {reason}" if reason else ""), dry_run_output_root
+    )
+    git_result = git_guard.after_write(
+        f"agent: move {relative_path} -> {target_path}" + (f" ({reason})" if reason else ""),
+        paths=[relative_path, target_path, log_path],
+    )
+    return _envelope(
+        True,
+        decision.operation_id,
+        decision.decision,
+        f"Moved to {target_path}.",
+        data={"from": relative_path, "to": target_path},
+        files_written=[target_path],
+        git_commit=git_result.agent_commit,
+    )
+
+
+def trash_note(
+    vault: Vault,
+    policy: VaultPolicy,
+    git_guard: GitGuard,
+    relative_path: str,
+    reason: str,
+    dry_run_output_root: Path | None,
+) -> dict:
+    """Safe delete: move the note into the trash folder. Real deletion stays impossible."""
+    from datetime import datetime
+
+    if relative_path.strip("/").startswith(f"{vault.trash_dir}/"):
+        return _refused("Note is already in the trash.")
+    stamp = datetime.now().strftime("%Y-%m")
+    target = f"{vault.trash_dir}/{stamp}/{relative_path}"
+    p = Path(relative_path)
+    parent = "" if p.parent.as_posix() == "." else f"/{p.parent.as_posix()}"
+    suffix = 1
+    while (vault.root / target).exists():
+        target = f"{vault.trash_dir}/{stamp}{parent}/{p.stem}-{suffix}{p.suffix}"
+        suffix += 1
+    result = move_note(vault, policy, git_guard, relative_path, target, reason or "Trashed by Hermes", dry_run_output_root)
+    if result.get("ok"):
+        result["message"] = f"Note moved to trash: {target}. Only Tristan can permanently delete it."
+        result["data"]["trashed_to"] = target
+    return result

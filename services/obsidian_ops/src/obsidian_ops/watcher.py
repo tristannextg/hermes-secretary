@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 def pending_commands(settings: Settings) -> list[HermesCommand]:
-    vault = Vault(settings.vault_path, settings.agent_dir)
+    vault = Vault(settings.vault_path, settings.agent_dir, settings.trash_dir)
     handled = _load_command_index(settings.command_index_path)
     pending = []
     for note in vault.markdown_files():
@@ -49,7 +49,7 @@ def pending_commands(settings: Settings) -> list[HermesCommand]:
 def mark_commands_handled(
     settings: Settings, source_file: str, raw_text: str | None = None, remove_command: bool = False
 ) -> dict:
-    vault = Vault(settings.vault_path, settings.agent_dir)
+    vault = Vault(settings.vault_path, settings.agent_dir, settings.trash_dir)
     note = vault.root / source_file
     if not note.exists():
         return {"marked_command_ids": [], "removed_from_note": False}
@@ -112,7 +112,7 @@ def _remove_command_text(text: str, raw_commands: list[str]) -> str:
 
 def check_once(settings: Settings, modified_since: float | None = None, notifier=None) -> list[HermesCommand]:
     """One watcher tick. Returns the commands that were newly seen this tick."""
-    vault = Vault(settings.vault_path, settings.agent_dir)
+    vault = Vault(settings.vault_path, settings.agent_dir, settings.trash_dir)
     handled = _load_command_index(settings.command_index_path)
     notified = _load_command_index(settings.watcher_notified_path)
     fresh: list[HermesCommand] = []

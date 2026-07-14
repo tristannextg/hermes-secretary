@@ -58,10 +58,15 @@ class VaultPolicy:
                 return self._blocked(operation, "Edits inside .obsidian are always blocked.")
             resolved_paths.append(resolved)
 
-        if operation.operation_type in {"edit_body", "move_file"}:
+        if operation.operation_type == "move_file":
+            # Direct power since 2026-07-14 (Tristan's decision): moves and renames
+            # are reversible (git history + trash), so no approval token needed.
+            return self._allowed(operation, resolved_paths[0], "Moves and renames are allowed; every move is git-committed.")
+
+        if operation.operation_type == "edit_body":
             if operation.approval_token:
                 return self._allowed(operation, resolved_paths[0], "Approved risk-2 operation.")
-            return self._requires_approval(operation, resolved_paths[0], "Body edits, moves, and renames require explicit approval.")
+            return self._requires_approval(operation, resolved_paths[0], "Body edits require explicit approval.")
 
         if operation.operation_type == "patch_frontmatter":
             if not self._frontmatter_patch_is_agent_only(operation.frontmatter_patch or {}):

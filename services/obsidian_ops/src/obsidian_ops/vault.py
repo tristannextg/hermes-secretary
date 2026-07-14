@@ -27,9 +27,10 @@ class NoteInfo:
 
 
 class Vault:
-    def __init__(self, root: Path, agent_dir: str = "80_Agent"):
+    def __init__(self, root: Path, agent_dir: str = "80_Agent", trash_dir: str = "Trash"):
         self.root = root.expanduser().resolve()
         self.agent_dir = agent_dir
+        self.trash_dir = trash_dir
 
     def markdown_files(self, include_agent: bool = False) -> list[Path]:
         if not self.root.exists():
@@ -38,6 +39,8 @@ class Vault:
         for path in self.root.rglob("*.md"):
             parts = path.relative_to(self.root).parts
             if ".obsidian" in parts:
+                continue
+            if parts and parts[0] == self.trash_dir:
                 continue
             if not include_agent and parts and parts[0] == self.agent_dir:
                 continue

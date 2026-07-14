@@ -288,3 +288,45 @@ def test_activity_log_records_operations(tmp_path: Path) -> None:
     assert "Proposed edit_body on `00_Inbox/note.md`" in log
     assert "Edited `00_Inbox/note.md`" in log
     assert f"## {datetime.now():%Y-%m-%d}" in log
+
+
+def test_move_note_directly(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    note = tmp_path / "vault" / "00_Inbox" / "misfiled.md"
+    note.write_text("# Misfiled\n", encoding="utf-8")
+    response = client.post(
+        "/tools/move_note",
+        json={"path": "00_Inbox/misfiled.md", "target_path": "10_Daily/misfiled.md", "reason": "belongs with daily notes"},
+    ).json()
+    assert response["ok"] is True
+    assert not note.exists()
+    assert (tmp_path / "vault" / "10_Daily" / "misfiled.md").exists()
+
+
+def test_trash_note_is_safe_delete(tmp_path: Path) -> None:
+    from datetime import datetime
+
+    client = _client(tmp_path)
+    note = tmp_path / "vault" / "00_Inbox" / "obsolete.md"
+    note.write_text("# Obsolete\n", encoding="utf-8")
+    response = client.post("/tools/trash_note", json={"path": "00_Inbox/obsolete.md", "reason": "superseded"}).json()
+    assert response["ok"] is True
+    trashed = response["data"]["trashed_to"]
+    assert trashed.startswith(f"Trash/{datetime.now():%Y-%m}/00_Inbox/obsolete")
+    assert not note.exists()
+    assert (tmp_path / "vault" / trashed).read_text(encoding="utf-8") == "# Obsolete\n"
+
+    # trashed notes disappear from search and pending scans
+    found = client.get("/tools/search_notes", params={"query": "Obsolete"}).json()
+    assert found["data"]["matches"] == []
+
+    # name collision gets a suffix
+    note.write_text("# Obsolete v2\n", encoding="utf-8")
+    second = client.post("/tools/trash_note", json={"path": "00_Inbox/obsolete.md"}).json()
+    assert second["data"]["trashed_to"] != trashed
+
+    # real deletion is still impossible
+    from obsidian_ops.policy import Operation, VaultPolicy
+
+    decision = VaultPolicy(tmp_path / "vault", ("00_Inbox",)).evaluate(Operation("delete_file", "00_Inbox/x.md"))
+    assert decision.decision == "blocked"

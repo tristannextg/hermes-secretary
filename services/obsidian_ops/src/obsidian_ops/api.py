@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from .activity_log import append_activity
-from .agent_writes import patch_agent_frontmatter, write_agent_note
+from .agent_writes import move_note, patch_agent_frontmatter, trash_note, write_agent_note
 from .note_ages import annotate_with_ages
 from .briefing import create_morning_briefing
 from .config import Settings
@@ -73,6 +73,17 @@ class RevertCommitRequest(BaseModel):
     approved_by: str
 
 
+class MoveNoteRequest(BaseModel):
+    path: str
+    target_path: str
+    reason: str = ""
+
+
+class TrashNoteRequest(BaseModel):
+    path: str
+    reason: str = ""
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
 
@@ -88,7 +99,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Hermes Obsidian Ops", version="0.2.0", lifespan=lifespan)
 
     def _vault() -> Vault:
-        return Vault(settings.vault_path, settings.agent_dir)
+        return Vault(settings.vault_path, settings.agent_dir, settings.trash_dir)
 
     def _policy() -> VaultPolicy:
         return VaultPolicy(settings.vault_path, settings.allowed_write_dirs, settings.max_files_per_operation)
@@ -218,6 +229,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def vault_history(limit: int = 20) -> dict:
         commits = _git_guard().history(min(limit, 100))
         return _ok(settings, {"commits": [asdict(commit) for commit in commits]})
+
+    @app.post("/tools/move_note")
+    def move(request: MoveNoteRequest) -> dict:
+        result = move_note(
+            _vault(), _policy(), _git_guard(), request.path, request.target_path, request.reason, _dry_run_output_root()
+        )
+        return _wrap(settings, result)
+
+    @app.post("/tools/trash_note")
+    def trash(request: TrashNoteRequest) -> dict:
+        result = trash_note(_vault(), _policy(), _git_guard(), request.path, request.reason, _dry_run_output_root())
+        return _wrap(settings, result)
 
     @app.post("/tools/revert_agent_commit")
     def revert_commit(request: RevertCommitRequest) -> dict:

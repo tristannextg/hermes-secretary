@@ -27,7 +27,7 @@ def main() -> None:
         target_date = date.fromisoformat(args.date) if args.date else None
         print(create_morning_briefing(settings, target_date))
     elif args.command == "process-commands":
-        vault = Vault(settings.vault_path, settings.agent_dir)
+        vault = Vault(settings.vault_path, settings.agent_dir, settings.trash_dir)
         policy = VaultPolicy(settings.vault_path, settings.allowed_write_dirs, settings.max_files_per_operation)
         output_root = settings.dry_run_output_path if settings.dry_run and not settings.dry_run_write_to_vault else None
         results = process_vault_commands(

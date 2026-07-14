@@ -42,6 +42,7 @@ class Settings:
     daily_dir: str = "10_Daily"
     daily_note_format: str = "%Y/%m/%Y-%m-%d.md"
     command_scan_exclude: tuple[str, ...] = ()
+    trash_dir: str = "Trash"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -86,6 +87,7 @@ class Settings:
             daily_dir=os.environ.get("DAILY_DIR", "10_Daily").strip("/"),
             daily_note_format=os.environ.get("DAILY_NOTE_FORMAT", "%Y/%m/%Y-%m-%d.md"),
             command_scan_exclude=tuple(_csv(os.environ.get("COMMAND_SCAN_EXCLUDE", ""))),
+            trash_dir=os.environ.get("TRASH_DIR", "Trash").strip("/"),
         )
 
     @property
