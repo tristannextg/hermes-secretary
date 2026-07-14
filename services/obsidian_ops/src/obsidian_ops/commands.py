@@ -16,7 +16,7 @@ from .vault import Vault
 
 # Bracketed form [@hermes ...] or bare "@hermes ..." to end of line.
 COMMAND_PATTERN = re.compile(
-    r"\[@hermes\s+(?P<body>[^\]]+)\]|(?<!\w)@hermes\s+(?P<line>[^\n\]]+)",
+    r"\[@hermes[,:;]?\s+(?P<body>[^\]]+)\]|(?<!\w)@hermes[,:;]?\s+(?P<line>[^\n\]]+)",
     re.IGNORECASE,
 )
 

@@ -112,3 +112,10 @@ def test_mark_handled_removes_command_from_note(tmp_path: Path) -> None:
     assert "\n\n\n" not in text.replace("\n\nMore", "\nMore") or True
     log = (vault / "80_Agent" / "Log")
     assert list(log.glob("*.md"))
+
+
+def test_command_with_punctuation_after_trigger(tmp_path: Path) -> None:
+    from obsidian_ops.commands import parse_commands
+
+    commands = parse_commands("- @hermes, archive this properly\n@hermes: also this\n[@hermes; and this]\n", "note.md")
+    assert [c.arguments["text"] for c in commands] == ["archive this properly", "also this", "and this"]
