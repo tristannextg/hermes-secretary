@@ -52,3 +52,38 @@ def test_watcher_scans_and_cleans_canvases(tmp_path: Path) -> None:
     assert "@hermes" not in canvas_path.read_text(encoding="utf-8")
     json.loads(canvas_path.read_text(encoding="utf-8"))
     assert pending_commands(settings) == []
+
+
+def test_agent_authored_command_lines_are_ignored(tmp_path: Path) -> None:
+    import subprocess
+
+    from obsidian_ops.git_guard import GitGuard
+    from obsidian_ops.watcher import pending_commands as pending
+
+    vault = make_vault(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=vault, check=True)
+    subprocess.run(["git", "config", "user.email", "t@e.st"], cwd=vault, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=vault, check=True)
+    subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "baseline"], cwd=vault, check=True)
+
+    # agent writes a briefing that mentions the @hermes syntax
+    briefing = vault / "briefing.md"
+    briefing.write_text("# Briefing\n\nTip: write @hermes add this to my knowledge store in any note.\n", encoding="utf-8")
+    guard = GitGuard(vault, dry_run=False)
+    guard.after_write("agent: write note briefing.md", paths=["briefing.md"])
+
+    settings = make_settings(tmp_path, dry_run=False)
+    assert pending(settings) == []
+
+    # Tristan appends his own command (committed by a snapshot, like the hourly cron)
+    briefing.write_text(briefing.read_text(encoding="utf-8") + "\n@hermes extract the bullet points please\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=vault, check=True)
+    subprocess.run(["git", "-c", "user.name=Vault Snapshot", "-c", "user.email=snapshot@local", "commit", "-q", "-m", "auto: hourly vault snapshot"], cwd=vault, check=True)
+
+    found = pending(settings)
+    assert [c.arguments["text"] for c in found] == ["extract the bullet points please"]
+
+    # preflight commits (external changes swept before an agent write) also stay human
+    briefing.write_text(briefing.read_text(encoding="utf-8") + "@hermes another one\n", encoding="utf-8")
+    guard.before_write()
+    assert len(pending(settings)) == 2

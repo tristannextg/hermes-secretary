@@ -43,7 +43,8 @@ def annotate_with_ages(vault_root: Path, relative_path: str) -> dict:
     return {"content_with_ages": "\n".join(annotated), "age_summary": summary}
 
 
-def _blame_dates(vault_root: Path, relative_path: str, expected_lines: int) -> list[str] | None:
+def _blame_porcelain(vault_root: Path, relative_path: str) -> list[dict] | None:
+    """Per-line blame metadata: [{date, author, summary, content}]. None if no history."""
     completed = subprocess.run(
         ["git", "blame", "--line-porcelain", "--", relative_path],
         cwd=vault_root,
@@ -53,22 +54,55 @@ def _blame_dates(vault_root: Path, relative_path: str, expected_lines: int) -> l
     )
     if completed.returncode != 0:
         return None
-    dates: list[str] = []
-    current_time: str | None = None
-    uncommitted = False
+    lines: list[dict] = []
+    meta_by_sha: dict[str, dict] = {}
+    current_sha = None
     for raw in completed.stdout.splitlines():
-        if raw.startswith("author-time "):
-            current_time = raw.split(" ", 1)[1]
-        elif raw.startswith("author "):
-            uncommitted = raw == "author Not Committed Yet"
-        elif raw.startswith("\t"):
-            if uncommitted:
-                dates.append("uncommitted")
-            elif current_time is not None:
-                dates.append(datetime.fromtimestamp(int(current_time), tz=timezone.utc).strftime("%Y-%m-%d"))
-            else:
-                dates.append("unknown")
-    if len(dates) != expected_lines:
-        # blame/file mismatch (e.g. concurrent edit) — fall back gracefully
+        if raw.startswith("\t"):
+            meta = meta_by_sha.get(current_sha, {})
+            lines.append({**meta, "content": raw[1:]})
+            continue
+        first = raw.split(" ", 1)[0]
+        if len(first) == 40 and all(c in "0123456789abcdef" for c in first):
+            current_sha = first
+            meta_by_sha.setdefault(current_sha, {})
+            continue
+        if current_sha is None:
+            continue
+        meta = meta_by_sha[current_sha]
+        if raw.startswith("author "):
+            meta["author"] = raw[len("author "):]
+        elif raw.startswith("author-time "):
+            epoch = int(raw.split(" ", 1)[1])
+            meta["date"] = datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%d")
+        elif raw.startswith("summary "):
+            meta["summary"] = raw[len("summary "):]
+    for line in lines:
+        if line.get("author") == "Not Committed Yet":
+            line["date"] = "uncommitted"
+    return lines
+
+
+def _blame_dates(vault_root: Path, relative_path: str, expected_lines: int) -> list[str] | None:
+    lines = _blame_porcelain(vault_root, relative_path)
+    if lines is None or len(lines) != expected_lines:
         return None
-    return dates
+    return [line.get("date", "unknown") for line in lines]
+
+
+def agent_authored_lines(vault_root: Path, relative_path: str) -> set[str]:
+    """Line contents written by the agent itself (agent commits, not snapshots).
+
+    Used to ignore @hermes command patterns inside agent-authored content
+    (e.g. the briefing note) while human-added lines in the same file
+    still trigger. Preflight/hourly snapshots preserve human edits, so only
+    commits with an 'agent:' subject by 'Hermes Agent' count.
+    """
+    lines = _blame_porcelain(vault_root, relative_path)
+    if not lines:
+        return set()
+    return {
+        line["content"]
+        for line in lines
+        if line.get("author") == "Hermes Agent" and str(line.get("summary", "")).startswith("agent:")
+    }

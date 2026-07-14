@@ -6,6 +6,7 @@ from pathlib import Path
 
 AGENT_COMMIT_PREFIX = "agent:"
 AGENT_GIT_IDENTITY = ["-c", "user.name=Hermes Agent", "-c", "user.email=hermes-agent@local"]
+SNAPSHOT_GIT_IDENTITY = ["-c", "user.name=Vault Snapshot", "-c", "user.email=snapshot@local"]
 
 
 @dataclass(frozen=True)
@@ -39,7 +40,9 @@ class GitGuard:
         self._ensure_git_repo()
         if self._status():
             self._run(["git", "add", "-A"])
-            self._commit("preflight: preserve vault state before Hermes write")
+            # Snapshot identity: preflight preserves EXTERNAL (human/sync) changes,
+            # so these lines must not blame as agent-authored.
+            self._run(["git", *SNAPSHOT_GIT_IDENTITY, "commit", "-m", "preflight: preserve vault state before Hermes write"])
             return self._head()
         return None
 
@@ -79,7 +82,7 @@ class GitGuard:
             raise GitGuardError(f"Refusing to revert non-agent commit: {subject!r}")
         if self._status():
             self._run(["git", "add", "-A"])
-            self._commit("preflight: preserve vault state before revert")
+            self._run(["git", *SNAPSHOT_GIT_IDENTITY, "commit", "-m", "preflight: preserve vault state before revert"])
         try:
             self._run(["git", *AGENT_GIT_IDENTITY, "revert", "--no-edit", sha])
         except GitGuardError as error:

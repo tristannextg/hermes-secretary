@@ -28,6 +28,7 @@ from .commands import (
 )
 from .config import Settings
 from .git_guard import GitGuard
+from .note_ages import agent_authored_lines
 from .policy import VaultPolicy
 from .vault import Vault
 
@@ -43,9 +44,12 @@ def pending_commands(settings: Settings) -> list[HermesCommand]:
         if relative in settings.command_scan_exclude:
             continue
         parser = parse_canvas_commands if note.suffix == ".canvas" else parse_commands
-        for command in parser(note.read_text(encoding="utf-8", errors="replace"), relative):
-            if _command_index_key(command) not in handled:
-                pending.append(command)
+        candidates = [
+            command
+            for command in parser(note.read_text(encoding="utf-8", errors="replace"), relative)
+            if _command_index_key(command) not in handled
+        ]
+        pending.extend(_drop_agent_authored(settings, note, relative, candidates))
     return pending
 
 
@@ -76,7 +80,6 @@ def mark_commands_handled(
         cleaned = remove_canvas_command_text(text, to_remove) if is_canvas else _remove_command_text(text, to_remove)
         if cleaned != text:
             from .activity_log import append_activity
-            from .git_guard import GitGuard
 
             output_root = settings.dry_run_output_path if settings.dry_run and not settings.dry_run_write_to_vault else None
             git_guard = GitGuard(settings.vault_path, settings.dry_run)
@@ -114,6 +117,27 @@ def _remove_command_text(text: str, raw_commands: list[str]) -> str:
     return cleaned
 
 
+def _drop_agent_authored(settings: Settings, note, relative: str, candidates: list[HermesCommand]) -> list[HermesCommand]:
+    """Ignore command patterns sitting on lines the agent itself wrote.
+
+    Lets Tristan write @hermes commands directly into agent-authored notes
+    (e.g. the morning briefing) while the agent's own text can never
+    self-trigger. Canvas cards are never agent-written, so they pass through.
+    """
+    if not candidates or note.suffix == ".canvas":
+        return candidates
+    agent_lines = agent_authored_lines(settings.vault_path, relative)
+    if not agent_lines:
+        return candidates
+    kept = []
+    for command in candidates:
+        if any(command.raw_text in line for line in agent_lines):
+            logger.debug("Ignoring agent-authored command pattern in %s: %s", relative, command.raw_text[:60])
+            continue
+        kept.append(command)
+    return kept
+
+
 def check_once(settings: Settings, modified_since: float | None = None, notifier=None) -> list[HermesCommand]:
     """One watcher tick. Returns the commands that were newly seen this tick."""
     vault = Vault(settings.vault_path, settings.agent_dir, settings.trash_dir)
@@ -127,11 +151,13 @@ def check_once(settings: Settings, modified_since: float | None = None, notifier
         if relative in settings.command_scan_exclude:
             continue
         parser = parse_canvas_commands if note.suffix == ".canvas" else parse_commands
+        candidates = []
         for command in parser(note.read_text(encoding="utf-8", errors="replace"), relative):
             key = _command_index_key(command)
             if key in handled or key in notified:
                 continue
-            fresh.append(command)
+            candidates.append(command)
+        fresh.extend(_drop_agent_authored(settings, note, relative, candidates))
     if not fresh:
         return []
 
