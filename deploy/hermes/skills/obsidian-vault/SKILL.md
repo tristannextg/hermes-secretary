@@ -26,6 +26,12 @@ curl -s 'http://127.0.0.1:8766/tools/summarize_repo_changes?since_hours=48'
 # recent commits (author/message), open PRs, freshly merged PRs. Use BOTH in the
 # briefing: name colleagues' PRs and merges explicitly — that is Tristan's team
 # awareness. If data.github entries carry an "error", mention data may be partial.
+curl -s 'http://127.0.0.1:8766/tools/github_prs?state=open&query=terrain'   # list/filter PRs (state: open|closed|all)
+curl -s 'http://127.0.0.1:8766/tools/github_pr?number=12'                    # full PR detail: files, diffstat, review discussion
+# These guarded tools are your ONLY GitHub access - you have no gh CLI and no
+# GitHub credentials by design (the token lives outside your sandbox). If you
+# need GitHub data these tools do not provide, say so on Telegram instead of
+# trying workarounds.
 curl -s 'http://127.0.0.1:8766/tools/pending_commands'
 curl -s 'http://127.0.0.1:8766/tools/list_suggestions?status=pending'
 ```
