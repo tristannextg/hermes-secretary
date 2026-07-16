@@ -17,7 +17,7 @@ from .config import Settings
 from .commands import parse_commands
 from .git_guard import GitGuard, GitGuardError
 from .policy import VaultPolicy
-from .repo_summary import github_activity, summarize_repos
+from .repo_summary import github_activity, github_list_prs, github_pr_detail, summarize_repos
 from .suggestions import SuggestionStore, apply_suggestion, propose_edit, reject_suggestion
 from .vault import Vault
 from .watcher import mark_commands_handled, pending_commands, watch_loop
@@ -267,6 +267,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "git_commit": revert_sha,
             },
         )
+
+    @app.get("/tools/github_pr")
+    def github_pr(number: int, repo: str | None = None) -> dict:
+        target = repo or (settings.github_repos[0] if settings.github_repos else None)
+        if not target:
+            return _wrap(settings, {"ok": False, "message": "No GitHub repo configured."})
+        detail = github_pr_detail(settings.github_token, target, number)
+        if "error" in detail:
+            return _wrap(settings, {"ok": False, "message": detail["error"]})
+        return _ok(settings, {"repo": target, "pr": detail})
+
+    @app.get("/tools/github_prs")
+    def github_prs(state: str = "open", query: str = "", repo: str | None = None) -> dict:
+        target = repo or (settings.github_repos[0] if settings.github_repos else None)
+        if not target:
+            return _wrap(settings, {"ok": False, "message": "No GitHub repo configured."})
+        if state not in {"open", "closed", "all"}:
+            return _wrap(settings, {"ok": False, "message": "state must be open, closed, or all"})
+        result = github_list_prs(settings.github_token, target, state, query)
+        if isinstance(result, dict) and "error" in result:
+            return _wrap(settings, {"ok": False, "message": result["error"]})
+        return _ok(settings, {"repo": target, "prs": result})
 
     @app.get("/tools/summarize_repo_changes")
     def summarize_repo_changes(since_hours: int = 48) -> dict:

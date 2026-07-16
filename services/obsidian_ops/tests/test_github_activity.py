@@ -52,3 +52,37 @@ def test_github_activity_reports_errors_per_repo() -> None:
 def test_github_activity_disabled_without_token_or_repos() -> None:
     assert github_activity(None, ("a/b",)) == []
     assert github_activity("token", ()) == []
+
+
+def test_github_pr_detail_and_list() -> None:
+    from obsidian_ops.repo_summary import github_list_prs, github_pr_detail
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/repos/arnold-nextg/nxguide/pulls/12":
+            return httpx.Response(200, json={
+                "title": "Add terrain cache", "user": {"login": "colleague"}, "state": "open",
+                "draft": False, "merged_at": None, "base": {"ref": "master"}, "head": {"ref": "terrain-cache"},
+                "body": "Speeds up tile loads", "additions": 120, "deletions": 8, "html_url": "https://github.com/x/12",
+            })
+        if path == "/repos/arnold-nextg/nxguide/pulls/12/files":
+            return httpx.Response(200, json=[{"filename": "cache.py", "status": "added", "additions": 120, "deletions": 8}])
+        if path.endswith("/pulls/12/comments"):
+            return httpx.Response(200, json=[{"user": {"login": "tristannextg"}, "path": "cache.py", "body": "LGTM"}])
+        if path.endswith("/issues/12/comments"):
+            return httpx.Response(200, json=[])
+        if path == "/repos/arnold-nextg/nxguide/pulls":
+            return httpx.Response(200, json=[
+                {"number": 12, "state": "open", "title": "Add terrain cache", "user": {"login": "colleague"}, "draft": False, "merged_at": None, "updated_at": "x", "html_url": "u", "body": "tiles"},
+                {"number": 13, "state": "open", "title": "Fix docs", "user": {"login": "a"}, "draft": False, "merged_at": None, "updated_at": "x", "html_url": "u", "body": ""},
+            ])
+        return httpx.Response(404)
+
+    detail = github_pr_detail("t", "arnold-nextg/nxguide", 12, client=_mock_client(handler))
+    assert detail["title"] == "Add terrain cache"
+    assert detail["files"][0]["path"] == "cache.py"
+    assert detail["review_comments"][0]["author"] == "tristannextg"
+
+    filtered = github_list_prs("t", "arnold-nextg/nxguide", "open", "terrain", client=_mock_client(handler))
+    assert [p["number"] for p in filtered] == [12]
+    assert github_pr_detail(None, "r", 1) == {"error": "GITHUB_TOKEN is not configured."}

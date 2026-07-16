@@ -134,3 +134,91 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def github_pr_detail(
+    token: str | None,
+    repo: str,
+    number: int,
+    client: httpx.Client | None = None,
+) -> dict:
+    """Read-only detail for one PR: meta, changed files, review discussion."""
+    if not token:
+        return {"error": "GITHUB_TOKEN is not configured."}
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    own_client = client is None
+    client = client or httpx.Client(base_url=GITHUB_API_URL, headers=headers, timeout=15.0)
+    try:
+        pr = client.get(f"/repos/{repo}/pulls/{number}")
+        pr.raise_for_status()
+        pr_data = pr.json()
+        files = _get(client, f"/repos/{repo}/pulls/{number}/files", {"per_page": 60})
+        review_comments = _get(client, f"/repos/{repo}/pulls/{number}/comments", {"per_page": 30})
+        issue_comments = _get(client, f"/repos/{repo}/issues/{number}/comments", {"per_page": 30})
+        return {
+            "number": number,
+            "title": pr_data.get("title", ""),
+            "author": (pr_data.get("user") or {}).get("login", ""),
+            "state": pr_data.get("state", ""),
+            "draft": bool(pr_data.get("draft")),
+            "merged_at": pr_data.get("merged_at"),
+            "base": (pr_data.get("base") or {}).get("ref"),
+            "head": (pr_data.get("head") or {}).get("ref"),
+            "body": (pr_data.get("body") or "")[:4000],
+            "additions": pr_data.get("additions"),
+            "deletions": pr_data.get("deletions"),
+            "files": [
+                {"path": f.get("filename"), "status": f.get("status"), "additions": f.get("additions"), "deletions": f.get("deletions")}
+                for f in files
+            ],
+            "review_comments": [
+                {"author": (c.get("user") or {}).get("login"), "path": c.get("path"), "body": (c.get("body") or "")[:1000]}
+                for c in review_comments
+            ],
+            "comments": [
+                {"author": (c.get("user") or {}).get("login"), "body": (c.get("body") or "")[:1000]}
+                for c in issue_comments
+            ],
+            "url": pr_data.get("html_url", ""),
+        }
+    except httpx.HTTPError as error:
+        return {"error": f"GitHub API error: {error}"}
+    finally:
+        if own_client:
+            client.close()
+
+
+def github_list_prs(
+    token: str | None,
+    repo: str,
+    state: str = "open",
+    query: str = "",
+    client: httpx.Client | None = None,
+) -> list[dict] | dict:
+    """List PRs (state: open|closed|all) with optional title/body substring filter."""
+    if not token:
+        return {"error": "GITHUB_TOKEN is not configured."}
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    own_client = client is None
+    client = client or httpx.Client(base_url=GITHUB_API_URL, headers=headers, timeout=15.0)
+    try:
+        pulls = _get(client, f"/repos/{repo}/pulls", {"state": state, "sort": "updated", "direction": "desc", "per_page": 50})
+        needle = query.lower()
+        return [
+            _pr_info(item)
+            for item in pulls
+            if not needle or needle in (item.get("title", "") + " " + (item.get("body") or "")).lower()
+        ]
+    except httpx.HTTPError as error:
+        return {"error": f"GitHub API error: {error}"}
+    finally:
+        if own_client:
+            client.close()
