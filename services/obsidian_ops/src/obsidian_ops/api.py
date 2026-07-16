@@ -65,6 +65,7 @@ class MarkHandledRequest(BaseModel):
     source_file: str
     raw_text: str | None = None
     remove_command: bool = False
+    failure_reason: str | None = None
 
 
 class RevertCommitRequest(BaseModel):
@@ -222,7 +223,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/tools/mark_command_handled")
     def mark_handled(request: MarkHandledRequest) -> dict:
-        result = mark_commands_handled(settings, request.source_file, request.raw_text, request.remove_command)
+        result = mark_commands_handled(
+            settings, request.source_file, request.raw_text, request.remove_command, request.failure_reason
+        )
         return _ok(settings, result)
 
     @app.get("/tools/vault_history")

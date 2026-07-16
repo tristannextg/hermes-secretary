@@ -114,7 +114,17 @@ curl -s -X POST http://127.0.0.1:8766/tools/mark_command_handled \
 
 Commands are also detected inside .canvas text cards (source_file ends in .canvas). Canvas rules: read_note returns the raw JSON Canvas structure - the text cards are the "text" fields of nodes with type "text". You may fulfil the command (e.g. summarize/move/trash referenced notes), and mark_command_handled remove_command works safely on canvases (exact-text removal at the node level). But NEVER edit canvas structure or card content yourself: frontmatter patches and body edits are blocked for .canvas files by policy - if a command asks for canvas content changes, tell Tristan on Telegram that canvas editing is manual-only.
 
-Always pass "remove_command": true — Tristan wants finished @hermes prompts cleaned out of his notes (the ops layer strips exactly the command text, nothing else). Always mark handled, even if you could not fulfil the command (then say why on Telegram — and still remove the command so it does not linger).
+Always pass "remove_command": true — Tristan wants finished @hermes prompts cleaned out of his notes (the ops layer strips exactly the command text, nothing else).
+
+If you could NOT fulfil a command, do not silently remove it: pass "failure_reason" with a short honest why —
+
+```bash
+curl -s -X POST http://127.0.0.1:8766/tools/mark_command_handled \
+  -H 'Content-Type: application/json' \
+  -d '{"source_file": "note.md", "raw_text": "@hermes ...", "remove_command": true, "failure_reason": "the linked article is paywalled"}'
+```
+
+The ops layer then replaces the command with a warning callout in the note that preserves Tristan's original request plus your reason (rendered as a blockquote, so it can never re-trigger you). Still tell him on Telegram too. Never leave a raw failed @hermes command sitting in a note, and never fake success.
 
 ## Answering questions about your past work
 

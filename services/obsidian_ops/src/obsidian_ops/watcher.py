@@ -21,10 +21,12 @@ from .commands import (
     _command_index_key,
     _load_command_index,
     _save_command_index,
+    annotate_canvas_command_failure,
     parse_canvas_commands,
     parse_commands,
     process_vault_commands,
     remove_canvas_command_text,
+    replace_commands_with_annotation,
 )
 from .config import Settings
 from .git_guard import GitGuard
@@ -54,7 +56,11 @@ def pending_commands(settings: Settings) -> list[HermesCommand]:
 
 
 def mark_commands_handled(
-    settings: Settings, source_file: str, raw_text: str | None = None, remove_command: bool = False
+    settings: Settings,
+    source_file: str,
+    raw_text: str | None = None,
+    remove_command: bool = False,
+    failure_reason: str | None = None,
 ) -> dict:
     vault = Vault(settings.vault_path, settings.agent_dir, settings.trash_dir)
     note = vault.root / source_file
@@ -76,8 +82,15 @@ def mark_commands_handled(
     _save_command_index(settings.command_index_path, handled)
 
     removed = False
-    if remove_command and to_remove:
-        cleaned = remove_canvas_command_text(text, to_remove) if is_canvas else _remove_command_text(text, to_remove)
+    if (remove_command or failure_reason) and to_remove:
+        if failure_reason:
+            cleaned = (
+                annotate_canvas_command_failure(text, to_remove, failure_reason)
+                if is_canvas
+                else replace_commands_with_annotation(text, to_remove, failure_reason)
+            )
+        else:
+            cleaned = remove_canvas_command_text(text, to_remove) if is_canvas else _remove_command_text(text, to_remove)
         if cleaned != text:
             from .activity_log import append_activity
 
@@ -90,8 +103,13 @@ def mark_commands_handled(
                 target = output_root / source_file
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(cleaned, encoding="utf-8")
-            log_path = append_activity(vault, f"Removed handled @hermes command(s) from `{source_file}`", output_root)
-            git_guard.after_write(f"agent: remove handled @hermes command from {source_file}", paths=[source_file, log_path])
+            action = (
+                f"Marked @hermes command as FAILED in `{source_file}` — {failure_reason}"
+                if failure_reason
+                else f"Removed handled @hermes command(s) from `{source_file}`"
+            )
+            log_path = append_activity(vault, action, output_root)
+            git_guard.after_write(f"agent: {'annotate failed' if failure_reason else 'remove handled'} @hermes command in {source_file}", paths=[source_file, log_path])
             removed = True
     return {"marked_command_ids": marked, "removed_from_note": removed}
 

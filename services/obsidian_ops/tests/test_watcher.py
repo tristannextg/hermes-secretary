@@ -119,3 +119,50 @@ def test_command_with_punctuation_after_trigger(tmp_path: Path) -> None:
 
     commands = parse_commands("- @hermes, archive this properly\n@hermes: also this\n[@hermes; and this]\n", "note.md")
     assert [c.arguments["text"] for c in commands] == ["archive this properly", "also this", "and this"]
+
+
+def test_failed_command_becomes_annotation_and_never_retriggers(tmp_path: Path) -> None:
+    from obsidian_ops.commands import parse_commands
+    from obsidian_ops.watcher import mark_commands_handled, pending_commands
+
+    vault = make_vault(tmp_path)
+    note = vault / "00_Inbox" / "note.md"
+    note.write_text("# Note\n\nSome context.\n@hermes translate this note into Klingon\n", encoding="utf-8")
+    settings = make_settings(tmp_path)
+
+    result = mark_commands_handled(
+        settings, "00_Inbox/note.md", remove_command=True, failure_reason="No Klingon translation capability available"
+    )
+    assert result["removed_from_note"] is True
+    text = note.read_text(encoding="utf-8")
+    assert "> [!warning] Hermes could not complete this request" in text
+    assert "@hermes translate this note into Klingon" in text  # original preserved
+    assert "No Klingon translation capability" in text
+    assert "Some context." in text
+
+    # recursion safety even with a FRESH command index (blockquote alone protects)
+    assert parse_commands(text, "00_Inbox/note.md") == []
+    fresh_settings = make_settings(tmp_path, command_index_path=tmp_path / "state" / "fresh_index.json")
+    assert pending_commands(fresh_settings) == []
+
+
+def test_failed_canvas_command_annotation(tmp_path: Path) -> None:
+    import json
+
+    from obsidian_ops.commands import parse_canvas_commands
+    from obsidian_ops.watcher import mark_commands_handled
+
+    vault = make_vault(tmp_path)
+    canvas = vault / "Board.canvas"
+    canvas.write_text(json.dumps({"nodes": [
+        {"id": "a", "type": "text", "x": 0, "y": 0, "width": 100, "height": 100, "text": "@hermes do impossible things"}
+    ], "edges": []}), encoding="utf-8")
+    settings = make_settings(tmp_path)
+
+    result = mark_commands_handled(settings, "Board.canvas", remove_command=True, failure_reason="Impossible")
+    assert result["removed_from_note"] is True
+    raw = canvas.read_text(encoding="utf-8")
+    data = json.loads(raw)
+    assert "could not complete" in data["nodes"][0]["text"]
+    assert "@hermes do impossible things" in data["nodes"][0]["text"]
+    assert parse_canvas_commands(raw, "Board.canvas") == []

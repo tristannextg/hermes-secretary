@@ -345,3 +345,52 @@ def remove_canvas_command_text(raw_json: str, raw_commands: list[str]) -> str:
         node["text"] = "\n".join(cleaned).strip()
         changed = True
     return json.dumps(canvas, indent="\t", ensure_ascii=False) if changed else raw_json
+
+
+def failure_annotation(raw_text: str, reason: str, now: datetime | None = None) -> str:
+    """Blockquote callout replacing a failed command in the note.
+
+    Every line starts with '>' — quoted lines are stripped before command
+    parsing, so the preserved original can never re-trigger the scanner
+    (agent-authorship blame filtering guards it a second time).
+    """
+    stamp = (now or datetime.now()).strftime("%Y-%m-%d %H:%M")
+    original = " ".join(raw_text.split())
+    why = " ".join((reason or "No reason given.").split())
+    return "\n".join([
+        f"> [!warning] Hermes could not complete this request ({stamp})",
+        f"> **Original:** {original}",
+        f"> **Why:** {why}",
+        "> Rephrase the request or ask Hermes on Telegram.",
+    ])
+
+
+def replace_commands_with_annotation(text: str, raw_commands: list[str], reason: str) -> str:
+    """Replace failed command occurrences with a failure callout (markdown text level)."""
+    out: list[str] = []
+    for line in text.split("\n"):
+        hit = next((raw for raw in raw_commands if "\n" not in raw and raw in line), None)
+        if hit is None:
+            out.append(line)
+            continue
+        leftover = line.replace(hit, "").strip()
+        if leftover not in {"", "-", "*", ">"}:
+            out.append(line.replace(hit, "").rstrip())
+        out.append(failure_annotation(hit, reason))
+    return "\n".join(out)
+
+
+def annotate_canvas_command_failure(raw_json: str, raw_commands: list[str], reason: str) -> str:
+    """Canvas variant: replace failed commands inside text nodes with the callout."""
+    try:
+        canvas = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return raw_json
+    changed = False
+    for node in canvas.get("nodes", []):
+        if not (isinstance(node, dict) and node.get("type") == "text" and node.get("text")):
+            continue
+        if any(raw in node["text"] for raw in raw_commands):
+            node["text"] = replace_commands_with_annotation(node["text"], raw_commands, reason).strip()
+            changed = True
+    return json.dumps(canvas, indent="\t", ensure_ascii=False) if changed else raw_json
