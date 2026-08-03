@@ -143,6 +143,34 @@ cat deploy/hermes/config/terminal-docker.env >> ~/.hermes/.env
   via git blame). Handled prompts are stripped from notes.
 - Obsidian plugins expected: LiveSync (sync), Dataview, Tag Wrangler, Homepage.
 
+## Sleeping and waking the secretary
+
+When no model provider is available (quota exhausted, key missing), put Hermes
+to sleep instead of letting the scheduler retry and spam errors:
+
+```bash
+bash deploy/vm/hermes-sleep.sh          # on the VM
+systemctl --user disable --now hermes-tunnel hermes-shim   # on your local machine
+```
+
+This pauses both cron jobs, stops the gateway/dashboard/SearXNG, and removes
+leftover tool containers. **The vault pipeline stays up**: obsidian-ops,
+livesync-bridge and the hourly git snapshots keep running, so notes continue to
+sync and version normally — only the agent's thinking stops.
+
+Wake it again once a provider works:
+
+```bash
+bash deploy/vm/hermes-wake.sh           # on the VM
+systemctl --user enable --now hermes-tunnel hermes-shim    # local, for the dashboard
+```
+
+Sleep state as of 2026-08-03: asleep — OpenAI ended Codex plan usage for
+third-party tools, and the workspace behind the Max Opus bridge
+(`custom/claude-opus-4-8`, already configured as sole provider) has no
+third-party/extra-usage budget. Waking requires either workspace budget from an
+admin or an independent API key (Anthropic / OpenRouter).
+
 ## Known open items
 
 - restic offsite backups with a tested restore (only a tar snapshot exists).
