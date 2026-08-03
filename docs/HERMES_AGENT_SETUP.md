@@ -89,11 +89,14 @@ curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
 
 - **Identity/prompts**: `deploy/hermes/SOUL.md` → `~/.hermes/SOUL.md`;
   `deploy/hermes/skills/obsidian-vault/SKILL.md` → `~/.hermes/skills/obsidian-vault/SKILL.md`.
-- **Model**: `~/.hermes/config.yaml` → `model: {provider: openai-codex, default: gpt-5.6-terra}`
-  plus `fallback_model: {provider: custom, model: claude-opus-4-8, base_url: http://10.16.0.34:8018/v1, key_env: OPENAI_API_KEY}`.
-  Codex auth: seed `providers.openai-codex.tokens` in `~/.hermes/auth.json` from a
-  logged-in Codex CLI's `~/.codex/auth.json` (hermes refreshes and keeps its own
-  session afterwards).
+- **Model** (current, 2026-08-03): the internal "Max Opus" bridge as sole provider —
+  `model: {provider: custom, default: claude-opus-4-8, base_url: http://10.16.0.34:8018/v1,
+  key_env: OPENAI_API_KEY, max_tokens: 16000}` (the cap matches the bridge's
+  `maxOutputTokens`). Add a second provider as `fallback_model:` when one exists —
+  every outage so far was a single-provider quota/auth failure.
+  History: Codex OAuth (`provider: openai-codex`, tokens seeded into
+  `~/.hermes/auth.json` from a logged-in Codex CLI's `~/.codex/auth.json`) was the
+  primary until OpenAI ended plan usage for third-party tools.
 - **Telegram**: `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALLOWED_USERS=<numeric user id>`
   in `~/.hermes/.env` (usernames do NOT work — numeric id only).
 - **Approval secret**: `OBSIDIAN_APPROVAL_SECRET=<same as APPROVAL_SECRET>` in
@@ -111,11 +114,14 @@ cat deploy/hermes/config/terminal-docker.env >> ~/.hermes/.env
 - **Services**: `hermes gateway install` (messaging + cron scheduler);
   `deploy/hermes/systemd/hermes-dashboard.service` → `~/.config/systemd/user/`,
   `systemctl --user enable --now hermes-dashboard`; `loginctl enable-linger`.
-- **Cron jobs**: recreate per `deploy/hermes/CRON_JOBS.md` (06:30-Berlin briefing
-  on gpt-5.6-sol; 5-min command poll on gpt-5.6-terra with the wake-gate script
+- **Cron jobs**: recreate per `deploy/hermes/CRON_JOBS.md` (06:30-Berlin briefing;
+  5-min command poll with the wake-gate script
   `deploy/hermes/scripts/check_vault_commands.sh` → `~/.hermes/scripts/`).
-  Note: cron jobs pin provider/model at creation; after switching the global
-  model, update the pins (`provider`/`model`/`*_snapshot` in `~/.hermes/cron/jobs.json`).
+  Note: cron jobs pin provider/model at creation; after switching the global model,
+  update the pins (`provider`/`model`/`base_url`/`key_env`/`*_snapshot` in
+  `~/.hermes/cron/jobs.json`) **with the gateway stopped** — the running scheduler
+  rewrites that file from memory. Also `docker rm -f` labeled tool containers after
+  changing `docker_forward_env`: they are reused by label without comparing env.
 
 ## 5. Local machine: dashboard at http://hermes.local:9119
 
