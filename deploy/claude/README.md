@@ -56,7 +56,7 @@ journalctl --user -u 'hermes-claude-*' -f
 Setup-tokens last a year. Tristan runs, in their own terminal:
 
 ```bash
-ssh -t nxguide-dev-cloud ~/hermes-claude/bin/add-claude-account.sh work
+ssh -t nxguide-dev-cloud /home/vmadmin/hermes-claude/bin/add-claude-account.sh work
 ```
 
 `claude setup-token` runs, they sign in in the browser and paste the code, and the script lifts the token from the terminal transcript, checks it with one Haiku turn and writes it to `secrets/accounts.env`. It never echoes the token or puts it on a command line, and it shreds the transcript. To un-park an account early, delete its key from `state/claude_accounts.json`.

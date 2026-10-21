@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Adds (or renews) one Claude account for Hermes, run by Tristan on the VM:
 #
-#   ssh -t nxguide-dev-cloud ~/hermes-claude/bin/add-claude-account.sh work
+#   ssh -t nxguide-dev-cloud /home/vmadmin/hermes-claude/bin/add-claude-account.sh work
+#
+# (an absolute path: an unquoted ~ is expanded by the local shell, to the wrong home)
 #
 # It runs `claude setup-token`; you sign in to that account in the browser and
 # paste the code back. The token it prints is lifted from the terminal
