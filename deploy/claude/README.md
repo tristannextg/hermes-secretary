@@ -32,6 +32,17 @@ Secrets (`TELEGRAM_BOT_TOKEN`, `OBSIDIAN_APPROVAL_SECRET`) are read by key from 
 
 **Failures are loud.** A job that cannot work (vault API down, no account left, Claude error) messages Tristan directly, without the model; repeats of the same alert are held back for 6 h, except briefing failures.
 
+## The cockpit Secretary is Hermes too
+
+Tristan's nvim cockpit (`~/nvim-cockpit` on the laptop) has one session with role `desk`, the Secretary. Since 2026-10-21 it runs on nxguide-dev-cloud in `~/hermes-desk`, the cockpit's fifth VM (`~/.config/nvc/config.lua` on the laptop: VM `dev-cloud`; `desk.vm = "dev-cloud"`, `desk.cwd = "~/hermes-desk"`):
+
+- `~/hermes-desk/CLAUDE.md` (from `desk/`) imports the same `HERMES.md`, `VAULT.md` and `memory/lessons.md` as the headless jobs: one persona, one memory.
+- `~/hermes-desk/.mcp.json` starts the same `hermes_mcp.py` with `HERMES_MCP_MODE=desk`. There is no `telegram_send`, because the Secretary speaks through the cockpit's bot (`nvc-vm desk-say`). Instead it has `log_exchange`, which writes its conversations into the shared `state/chat.jsonl`.
+- It keeps the cockpit's `desk-state`/`desk-say`/`desk-act` (the cockpit's `vm/desk/BRIEF.md`), so it sees every agent chat as well as the vault and GitHub.
+- `@hermes` commands stay with the headless commands job. The Secretary's 08:00 digest points at the 06:30 briefing instead of repeating it.
+- dev-cloud got the cockpit's VM side without the port broker: `install-vm.sh` was run without `~/.config/nvc/portd.json`, so no user-scope `nvc-ports` MCP entry reaches the duxloop watcher's `claude -p`. Do not run plain `nvc install-vm nxguide-dev-cloud`, because it would add that entry. Use the tar pipe from `bin/nvc install-vm` without its portd step.
+- `install.sh --trust-desk` pre-accepts Claude's folder-trust question for `~/hermes-desk`, but only while no claude process runs, since every running claude rewrites `~/.claude.json`. Otherwise, answer the question once in the Secretary's pane.
+
 ## Install / update
 
 On the VM, from the repo checkout:
