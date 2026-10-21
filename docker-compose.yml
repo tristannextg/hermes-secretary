@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: services/obsidian_ops/Dockerfile
+    # Hermes's vault API: without this it stayed dead for two months after one exit.
+    restart: unless-stopped
     user: "1000:1000"
     read_only: true
     cap_drop:

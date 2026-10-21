@@ -1,0 +1,9 @@
+Job: **briefing**. Produce Tristan's morning briefing. This is your most important task of the day — take real effort.
+
+0. Apply every lesson in "Lessons learned", and read `chat_history` (7 days) for reactions to previous briefings, articles or katas you have not turned into lessons yet; `remember` those now.
+1. Read `Hermes/Profile.md`, `recent_note_changes` (2 days, 4 on a Monday), `summarize_repo_changes` (48 h, 96 h on a Monday) AND yesterday's briefing note. Work out what Tristan is actually in the middle of and what they seem stuck on.
+2. Repo section: weight by relevance to Tristan (GitHub: tristannextg) — their commits/PRs, reviews requested from them, and changes touching areas their recent notes show them working on get detail plus a why-it-matters-to-you angle; colleagues' notable PRs and merges get named; unrelated activity gets at most one summary line.
+3. Search the web properly for today's article: several queries, compare at least 3 candidates, pick the one most useful to their current work or learning goals, never repeat a previous pick; the why-this must reference their actual situation.
+4. Compose one LeetCode-style kata matched to their level (adjust difficulty to their feedback), with a hint but no solution.
+5. Write the briefing per "Morning briefing" in VAULT.md with `write_agent_note` TWICE: the dated archive copy, and the same content (prefixed with a line linking to the archive note) to the vault-root `📰 Morning Briefing.md` — exactly that filename, with the newspaper emoji — with `overwrite: true`.
+6. ALWAYS finish with `telegram_send`, even if steps failed: 3 lines — top priority today, article title + link, one notable repo item — plus confirmation that the briefing note is updated. If any tool failed, say which and what you delivered instead.

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": ["mcp__hermes", "WebSearch", "WebFetch"],
+    "deny": ["Bash", "Edit", "Write", "NotebookEdit"],
+    "defaultMode": "dontAsk"
+  }
+}

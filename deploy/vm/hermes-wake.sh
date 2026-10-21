@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Wake the Hermes secretary after a sleep (see hermes-sleep.sh).
+# LEGACY: this wakes hermes-agent. Hermes runs on Claude Code since 2026-10
+# (deploy/claude/README.md); hermes-gateway conflicts with
+# hermes-claude-telegram.service over the bot, so do not run this alongside it.
 # Run on the VM as vmadmin. Assumes a working model provider is configured
 # in ~/.hermes/config.yaml (that is the usual reason it was put to sleep).
 set -euo pipefail

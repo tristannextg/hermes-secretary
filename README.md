@@ -19,6 +19,8 @@
 
 Hermes Secretary is a personal AI operations layer. It is meant to help with the work around your work: reading context, preparing morning briefings, tracking commands, summarizing repositories, and proposing edits without casually taking over your files.
 
+Hermes's brain is headless Claude Code on Tristan's Claude subscriptions, switching accounts at usage limits: see [deploy/claude/README.md](deploy/claude/README.md). The hermes-agent setup in `deploy/hermes/` and `docs/HERMES_AGENT_SETUP.md` is retired.
+
 This repository currently contains the **Obsidian Ops** capability: a guarded service that lets Hermes work around an Obsidian vault through narrow, auditable tools.
 
 ## System Overview

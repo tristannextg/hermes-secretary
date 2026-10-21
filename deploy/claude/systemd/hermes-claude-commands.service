@@ -1,0 +1,7 @@
+[Unit]
+Description=Hermes (Claude Code) - pending @hermes vault commands
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/hermes-claude/hermes.env
+ExecStart=/usr/bin/python3 -I %h/hermes-claude/bin/hermes_run.py commands

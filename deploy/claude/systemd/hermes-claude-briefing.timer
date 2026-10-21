@@ -1,0 +1,10 @@
+[Unit]
+Description=Hermes (Claude Code) - morning briefing, weekdays 06:30 Berlin
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 06:30:00 Europe/Berlin
+# A briefing missed while the VM was down still arrives, late.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

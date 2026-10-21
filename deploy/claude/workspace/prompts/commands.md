@@ -1,0 +1,1 @@
+Job: **commands**. Handle the pending `@hermes` vault commands listed below, following "Handling @hermes commands" in VAULT.md. Every command ends with `mark_command_handled` — with `failure_reason` when you could not fulfil it — and a one-sentence `telegram_send` confirmation.

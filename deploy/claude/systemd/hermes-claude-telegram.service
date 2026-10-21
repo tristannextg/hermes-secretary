@@ -1,0 +1,14 @@
+[Unit]
+Description=Hermes (Claude Code) - Telegram chat with @Hermes_secretarybot
+After=network-online.target
+# Only one process may poll a bot.
+Conflicts=hermes-gateway.service
+
+[Service]
+EnvironmentFile=%h/hermes-claude/hermes.env
+ExecStart=/usr/bin/python3 -I %h/hermes-claude/bin/tg_poll.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
