@@ -35,11 +35,12 @@ STATE = os.path.join(HOME, "state")
 CLAUDE = os.environ.get("HERMES_CLAUDE_BIN", os.path.expanduser("~/.local/bin/claude"))
 
 JOBS = {
-    # model env var, default model, timeout in seconds
-    "briefing": ("HERMES_MODEL_BRIEFING", "claude-opus-5-5", 2400),
-    "commands": ("HERMES_MODEL_COMMANDS", "claude-sonnet-5-5", 1200),
-    "chat": ("HERMES_MODEL_CHAT", "claude-sonnet-5-5", 1200),
-    "check": ("HERMES_MODEL_CHECK", "claude-haiku-5-5", 120),
+    # model env var, default model (an alias: the newest the installed
+    # Claude Code knows), timeout in seconds
+    "briefing": ("HERMES_MODEL_BRIEFING", "opus", 2400),
+    "commands": ("HERMES_MODEL_COMMANDS", "sonnet", 1200),
+    "chat": ("HERMES_MODEL_CHAT", "sonnet", 1200),
+    "check": ("HERMES_MODEL_CHECK", "haiku", 120),
 }
 ALLOWED_TOOLS = "mcp__hermes WebSearch WebFetch"
 ALERT_EVERY_S = 6 * 3600

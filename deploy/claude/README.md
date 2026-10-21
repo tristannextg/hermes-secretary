@@ -12,7 +12,7 @@ The vault side is unchanged: obsidian-ops, the livesync bridge, the hourly vault
 | briefing | `hermes-claude-briefing.timer`, Mon–Fri 06:30 Europe/Berlin (DST-proof) | Opus |
 | commands | `hermes-claude-commands.timer`, every 5 min; Claude starts only when `pending_commands` is non-empty | Sonnet |
 
-Models are set in `~/hermes-claude/hermes.env` (`HERMES_MODEL_*`).
+Models are set in `~/hermes-claude/hermes.env` (`HERMES_MODEL_*`), as aliases (`opus`, `sonnet`, `haiku`): a full id newer than the installed Claude Code is not recognised.
 
 **Accounts.** Every session goes through `bin/claude_accounts.py`, a copy of nxguide's `hosting/loop/duxloop/claude_accounts.py` (keep them in sync). It picks the first account not parked at its usage limit, parks one that hits its limit until the reset its message names, and resumes the same session on the next account. The accounts are the `CLAUDE_ACCOUNT_TOKENS` entries of every file in `HERMES_ACCOUNT_FILES`, merged in order in memory:
 

@@ -41,7 +41,7 @@ fi
 
 echo "Checking the token with one Haiku turn..."
 answer=$(CLAUDE_CONFIG_DIR="$cfg" CLAUDE_CODE_OAUTH_TOKEN="$HERMES_NEW_TOKEN" \
-  "$CLAUDE" -p --model claude-haiku-5-5 "Reply with exactly: ok" 2>&1 || true)
+  "$CLAUDE" -p --model haiku "Reply with exactly: ok" 2>&1 || true)
 if [ "$(printf '%s' "$answer" | tr -d '[:space:].' | tr '[:upper:]' '[:lower:]')" != ok ]; then
   echo "The new token does not work (${answer:0:200}); nothing was changed." >&2
   exit 1

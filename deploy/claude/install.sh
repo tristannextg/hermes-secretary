@@ -34,9 +34,9 @@ HERMES_OPS_URL=http://127.0.0.1:8766
 HERMES_TELEGRAM_CHAT_ID=391230543
 HERMES_SECRET_FILES="$HOME/.hermes/.env $HOME/.hermes/obsidian.env"
 HERMES_ACCOUNT_FILES="$HOME/duxloop-watch/secrets/claude.env $D/secrets/accounts.env"
-HERMES_MODEL_BRIEFING=claude-opus-5-5
-HERMES_MODEL_CHAT=claude-sonnet-5-5
-HERMES_MODEL_COMMANDS=claude-sonnet-5-5
+HERMES_MODEL_BRIEFING=opus
+HERMES_MODEL_CHAT=sonnet
+HERMES_MODEL_COMMANDS=sonnet
 EOF
 
 if [ ! -e "$D/secrets/accounts.env" ]; then
@@ -57,6 +57,21 @@ PY
     fi
   } > "$D/memory/lessons.md"
 fi
+
+# Without this Claude Code ignores the workspace's .claude/settings.json allow list.
+python3 -I - "$D/.claude-home/.claude.json" "$D" <<'PY'
+import json, os, sys
+path, ws = sys.argv[1], sys.argv[2]
+try:
+    cfg = json.load(open(path))
+except (FileNotFoundError, ValueError):
+    cfg = {}
+cfg.setdefault("projects", {}).setdefault(ws, {})["hasTrustDialogAccepted"] = True
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(cfg, f, indent=2)
+os.replace(tmp, path)
+PY
 
 cp "$SRC"/systemd/hermes-claude-* "$UNITS/"
 systemctl --user daemon-reload
