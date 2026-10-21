@@ -1,0 +1,6 @@
+{
+  "enabledMcpjsonServers": ["hermes"],
+  "permissions": {
+    "allow": ["Bash(nvc-vm *)", "mcp__hermes", "WebSearch", "WebFetch"]
+  }
+}

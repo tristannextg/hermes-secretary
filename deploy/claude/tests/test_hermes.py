@@ -101,6 +101,23 @@ class Protocol(unittest.TestCase):
         self.assertIn("not a read tool", call["result"]["content"][0]["text"])
 
 
+class DeskMode(unittest.TestCase):
+    def test_desk_mode_swaps_telegram_send_for_log_exchange(self):
+        with mock.patch.dict(os.environ, {"HERMES_MCP_MODE": "desk"}):
+            self.assertIn("log_exchange", hermes_mcp.tools())
+            self.assertNotIn("telegram_send", hermes_mcp.tools())
+        with mock.patch.dict(os.environ, {"HERMES_MCP_MODE": ""}):
+            self.assertIn("telegram_send", hermes_mcp.tools())
+            self.assertNotIn("log_exchange", hermes_mcp.tools())
+
+    def test_log_exchange_lands_in_the_shared_chat_log(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(hermes_mcp, "CHAT_LOG", os.path.join(d, "chat.jsonl")):
+            hermes_mcp.log_exchange({"tristan": "how is #4373?", "hermes": "waiting on review"})
+            history = hermes_mcp.chat_history({"days": 1})
+        self.assertIn("tristan: how is #4373?", history)
+        self.assertIn("hermes: waiting on review", history)
+
+
 class Commands(unittest.TestCase):
     def test_no_pending_commands_starts_no_session(self):
         with tempfile.TemporaryDirectory() as d, mock.patch.object(hermes_run, "STATE", d), \

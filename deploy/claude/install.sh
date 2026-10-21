@@ -17,7 +17,7 @@ mkdir -p "$D"/{bin,prompts,memory,state,secrets,.claude,.claude-home} "$UNITS"
 chmod 700 "$D" "$D/secrets" "$D/state"
 
 cp "$SRC"/bin/*.py "$D/bin/"
-cp "$SRC"/workspace/CLAUDE.md "$SRC"/workspace/VAULT.md "$D/"
+cp "$SRC"/workspace/CLAUDE.md "$SRC"/workspace/HERMES.md "$SRC"/workspace/VAULT.md "$D/"
 cp "$SRC"/workspace/prompts/*.md "$D/prompts/"
 cp "$SRC"/workspace/.claude/settings.json "$D/.claude/settings.json"
 cp "$SRC"/add-claude-account.sh "$D/bin/"
@@ -73,9 +73,45 @@ with open(tmp, "w") as f:
 os.replace(tmp, path)
 PY
 
+# The cockpit secretary's folder (desk.cwd in the cockpit's config.lua): an
+# interactive cockpit session that is Hermes too. Outside $D, because Claude
+# Code also loads every CLAUDE.md above its working directory.
+DESK="$HOME/hermes-desk"
+mkdir -p "$DESK/.claude"
+cp "$SRC"/desk/CLAUDE.md "$DESK/CLAUDE.md"
+cp "$SRC"/desk/settings.json "$DESK/.claude/settings.json"
+cat > "$DESK/.mcp.json" <<EOF
+{"mcpServers": {"hermes": {"type": "stdio", "command": "/usr/bin/python3", "args": ["-I", "$D/bin/hermes_mcp.py"],
+  "env": {"HERMES_MCP_MODE": "desk", "HERMES_HOME": "$D", "HERMES_OPS_URL": "http://127.0.0.1:8766",
+          "HERMES_TELEGRAM_CHAT_ID": "391230543",
+          "HERMES_SECRET_FILES": "$HOME/.hermes/.env $HOME/.hermes/obsidian.env"}}}}
+EOF
+
 cp "$SRC"/systemd/hermes-claude-* "$UNITS/"
 systemctl --user daemon-reload
-echo "installed into $D"
+echo "installed into $D and $DESK"
+
+if [ "${1:-}" = "--trust-desk" ]; then
+  # An interactive session stops at Claude's folder-trust question; the
+  # cockpit cannot answer it. ~/.claude.json is rewritten by every running
+  # claude, so this writes it only while none runs (the watcher's sessions).
+  if pgrep -u "$USER" -x claude >/dev/null; then
+    echo "a claude process is running: try --trust-desk again in a minute" >&2
+    exit 1
+  fi
+  python3 -I - "$HOME/.claude.json" "$DESK" <<'PY'
+import json, os, sys
+path, ws = sys.argv[1], sys.argv[2]
+cfg = json.load(open(path))
+cfg.setdefault("projects", {}).setdefault(ws, {})["hasTrustDialogAccepted"] = True
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(cfg, f, indent=2)
+os.chmod(tmp, os.stat(path).st_mode & 0o777)
+os.replace(tmp, path)
+PY
+  echo "trusted $DESK"
+fi
 
 if [ "${1:-}" = "--enable" ]; then
   # hermes-agent's gateway polls the same bot and its cron would double the briefing.

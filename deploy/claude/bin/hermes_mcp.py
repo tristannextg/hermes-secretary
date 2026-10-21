@@ -13,6 +13,11 @@ can do outside its own reasoning and web search:
   into every session (hermes-agent's memory tool).
 - chat_history: the Telegram exchange log (hermes-agent's session_search).
 
+HERMES_MCP_MODE=desk is the cockpit secretary's variant: it talks to Tristan
+through the cockpit's own bot (nvc-vm desk-say), so telegram_send is hidden,
+and log_exchange writes its conversations into the same log, so both doors
+share one memory of what was said.
+
 Secrets are read from the files named in HERMES_SECRET_FILES, by key, so they
 are never copied anywhere and never sit in the Claude process environment.
 Stdlib only: the VM runs it with the system python3.
@@ -158,6 +163,12 @@ def remember(args: dict) -> str:
     return f"remembered in {LESSONS}"
 
 
+def log_exchange(args: dict) -> str:
+    log_chat("tristan", args["tristan"])
+    log_chat("hermes", args["hermes"])
+    return "logged"
+
+
 def chat_history(args: dict) -> str:
     days = int(args.get("days", 7))
     since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)
@@ -216,6 +227,16 @@ TOOLS = {
         "future session applies it (e.g. 'kata too easy - go one level harder').",
         {"type": "object", "properties": {"lesson": {"type": "string"}}, "required": ["lesson"]},
     ),
+    "log_exchange": (
+        log_exchange,
+        "Log one exchange with Tristan from the cockpit (their message and your answer) into the "
+        "chat log every Hermes session reads, so the briefing sees their reactions too.",
+        {
+            "type": "object",
+            "properties": {"tristan": {"type": "string"}, "hermes": {"type": "string"}},
+            "required": ["tristan", "hermes"],
+        },
+    ),
     "chat_history": (
         chat_history,
         "Read the Telegram exchange with Tristan from the last `days` days (default 7): his "
@@ -223,6 +244,14 @@ TOOLS = {
         {"type": "object", "properties": {"days": {"type": "integer"}}},
     ),
 }
+
+
+def tools() -> dict:
+    """The tools of this mode: the cockpit secretary (HERMES_MCP_MODE=desk)
+    speaks through the cockpit's bot and logs what it says; the headless jobs
+    send and log through telegram_send."""
+    hidden = {"telegram_send"} if os.environ.get("HERMES_MCP_MODE") == "desk" else {"log_exchange"}
+    return {n: t for n, t in TOOLS.items() if n not in hidden}
 
 
 def reply(id_, result=None, error=None) -> None:
@@ -254,13 +283,13 @@ def handle(req: dict) -> None:
             {
                 "tools": [
                     {"name": n, "description": d, "inputSchema": s}
-                    for n, (_, d, s) in TOOLS.items()
+                    for n, (_, d, s) in tools().items()
                 ]
             },
         )
     elif method == "tools/call":
         name = req["params"]["name"]
-        if name not in TOOLS:
+        if name not in tools():
             reply(id_, error={"code": -32602, "message": f"unknown tool {name}"})
             return
         try:
