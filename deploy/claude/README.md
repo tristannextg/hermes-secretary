@@ -1,5 +1,10 @@
 # Hermes on Claude Code
 
+> Superseded on 2026-10-28 by `deploy/harness` (hermes-agent with the official Claude subscription
+> plugin; Tristan ruled subscription tokens in hermes-agent fine that day). This setup stays on
+> disk as the rollback: `deploy/harness/install.sh --rollback` starts its units again.
+> `bin/hermes_mcp.py` is shared: hermes-agent mounts it in `HERMES_MCP_MODE=agent`.
+
 Since 2026-10, Hermes's brain is headless Claude Code (`claude -p`) on Tristan's Claude subscriptions, replacing hermes-agent. hermes-agent lost its last provider on 2026-08-03: subscription logins used by third-party apps are billed as extra usage, and putting a subscription token into hermes-agent is against Anthropic's consumer terms. Claude Code itself running on the subscription is first-party use.
 
 The vault side is unchanged: obsidian-ops, the livesync bridge, the hourly vault snapshots, the vault layout under `Hermes/`.

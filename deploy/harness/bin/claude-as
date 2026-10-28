@@ -1,0 +1,47 @@
+#!/bin/sh
+# claude-as ACCOUNT [claude args...]: Claude Code on one of the cockpit's Claude
+# accounts, for the claude-accounts provider plugin (one provider per account).
+#
+# The token is the cockpit's own setup-token, read in place from its 0600 store
+# (~/.config/nvc/accounts/ACCOUNT.token, the file nvc-vm's claude_env reads) at
+# every start: no second copy exists, and it is only ever in this process's
+# environment, never in Hermes's own, so nothing the model runs can see it.
+# Each account gets its own CLAUDE_CONFIG_DIR, so Claude Code's state (the
+# onboarding flags, its caches) never mixes two logins.
+set -eu
+
+acct=${1:-}
+case $acct in
+  '' | *[!A-Za-z0-9_-]*)
+    echo "claude-as: an account name is letters, digits, '-' and '_' only" >&2
+    exit 2
+    ;;
+esac
+shift
+
+store=${NVC_ACCOUNTS_DIR:-$HOME/.config/nvc/accounts}
+tok=$store/$acct.token
+if [ ! -r "$tok" ]; then
+  echo "claude-as: no token for account $acct in $store (the cockpit installs it: nvc account install)" >&2
+  exit 3
+fi
+# A self-hosted source (one JSON object) is not a Claude login: Strata is its
+# own fallback entry, an OpenAI-compatible endpoint.
+case $(head -c 1 "$tok") in
+  '{')
+    echo "claude-as: $acct is a self-hosted source, not a Claude account" >&2
+    exit 3
+    ;;
+esac
+
+CLAUDE_CODE_OAUTH_TOKEN=$(tr -d ' \t\r\n' <"$tok")
+export CLAUDE_CODE_OAUTH_TOKEN
+# An inherited API key would win over the subscription token in Claude Code.
+unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
+
+CLAUDE_CONFIG_DIR=${CLAUDE_AS_CONFIG_ROOT:-${HERMES_HOME:-$HOME/.hermes}/claude-accounts}/$acct
+export CLAUDE_CONFIG_DIR
+umask 077
+mkdir -p "$CLAUDE_CONFIG_DIR"
+
+exec "${CLAUDE_AS_BIN:-$HOME/.local/bin/claude}" "$@"

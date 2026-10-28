@@ -16,7 +16,8 @@ can do outside its own reasoning and web search:
 HERMES_MCP_MODE=desk is the cockpit secretary's variant: it talks to Tristan
 through the cockpit's own bot (nvc-vm desk-say), so telegram_send is hidden,
 and log_exchange writes its conversations into the same log, so both doors
-share one memory of what was said.
+share one memory of what was said. HERMES_MCP_MODE=agent is hermes-agent's
+(deploy/harness): the vault and the chat log to read, nothing else.
 
 Secrets are read from the files named in HERMES_SECRET_FILES, by key, so they
 are never copied anywhere and never sit in the Claude process environment.
@@ -246,11 +247,19 @@ TOOLS = {
 }
 
 
+HIDDEN = {
+    # the cockpit secretary speaks through the cockpit's bot and logs what it says
+    "desk": {"telegram_send"},
+    # hermes-agent (deploy/harness) has its own Telegram gateway and memory; it reads
+    # the old chat log, but writes neither it nor lessons.md, which stay the rollback's
+    "agent": {"telegram_send", "remember", "log_exchange"},
+}
+
+
 def tools() -> dict:
-    """The tools of this mode: the cockpit secretary (HERMES_MCP_MODE=desk)
-    speaks through the cockpit's bot and logs what it says; the headless jobs
-    send and log through telegram_send."""
-    hidden = {"telegram_send"} if os.environ.get("HERMES_MCP_MODE") == "desk" else {"log_exchange"}
+    """The tools of this mode (HERMES_MCP_MODE); the headless jobs send and log
+    through telegram_send."""
+    hidden = HIDDEN.get(os.environ.get("HERMES_MCP_MODE", ""), {"log_exchange"})
     return {n: t for n, t in TOOLS.items() if n not in hidden}
 
 

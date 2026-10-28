@@ -1,0 +1,13 @@
+name: cockpit-cards
+version: 0.1.0
+description: >-
+  The nvim cockpit's cards (urgent questions, failures, usage limits, messages) on Hermes's own
+  Telegram bot: polls the cockpit's Session API (notify.pending), sends each card with its
+  buttons, edits it when it is answered or closed, and routes taps and text replies to
+  notify.answer / notify.open / notify.later. No model call is involved.
+author: Tristan Döring
+license: MIT
+requires_hermes: ">=0.22.5"
+platforms: [linux]
+provides_tools: []
+provides_hooks: []

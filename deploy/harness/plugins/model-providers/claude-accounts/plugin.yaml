@@ -1,0 +1,12 @@
+name: claude-accounts
+kind: model-provider
+version: 0.1.0
+manifest_version: 2
+description: >-
+  The official claude-subscription-directsdk provider once per Claude account (claude-work,
+  claude-dx1, ...), each running Claude Code through bin/claude-as ACCOUNT, so fallback_providers
+  can chain accounts. Needs the official plugin installed in the same HERMES_HOME.
+author: Tristan Döring
+license: MIT
+requires_hermes: ">=0.22.5"
+platforms: [linux]
