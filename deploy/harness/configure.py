@@ -47,6 +47,8 @@ def managed(chat_id: int) -> dict:
         # env URL would otherwise be auto-selected
         "web.search_backend": "ddgs",
         "web.extract_backend": "firecrawl",
+        # room for the lessons the earlier Hermes collected (install.sh seeds MEMORY.md with them)
+        "memory.memory_char_limit": 6000,
         # the briefing is the day's most important job (Opus); unpinned, so it keeps the chain
         "cron.model": "opus",
         "cron.model_provider": CHAIN[0],

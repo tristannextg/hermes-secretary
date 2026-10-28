@@ -127,6 +127,16 @@ fi
 [ -f "$H/skills/cockpit/cockpit-help/references/README.md" ] ||
   say "warning: the cockpit's README is not shipped yet (--docs DIR, or README.md 'Cockpit docs')"
 
+# Tristan's feedback the earlier Hermes kept (~/hermes-claude/memory/lessons.md) becomes this
+# Hermes's memory once; hermes-agent's memory file separates entries with a line holding only §
+if [ ! -s "$H/memories/MEMORY.md" ] && [ -s "$HOME/hermes-claude/memory/lessons.md" ]; then
+  mkdir -p "$H/memories"
+  python3 -I -c '
+import sys
+entries = [line[2:].strip() for line in open(sys.argv[1]) if line.startswith("- ")]
+open(sys.argv[2], "w").write("\n§\n".join(entries) + "\n")' "$HOME/hermes-claude/memory/lessons.md" "$H/memories/MEMORY.md"
+fi
+
 # ---------------------------------------------------------------- no gateway unit before --switch
 # hermes chat and hermes cron start an installed gateway unit by themselves, and starting it stops
 # hermes-claude-telegram (its Conflicts=); without the unit they run a private gateway, Telegram off

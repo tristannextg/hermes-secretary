@@ -596,7 +596,7 @@ class Configure(unittest.TestCase):
         self.assertEqual(new["fallback_providers"][-1]["key_env"], "STRATA_API_KEY")
         self.assertEqual(new["terminal"]["docker_forward_env"], [])
         self.assertFalse(new["terminal"]["docker_network"])
-        self.assertEqual(new["memory"], {"memory_enabled": True})
+        self.assertEqual(new["memory"], {"memory_enabled": True, "memory_char_limit": 6000})
         self.assertEqual(new["plugins"]["enabled"],
                          ["other", "claude-subscription-directsdk-experimental", "cockpit-cards"])
         self.assertEqual(new["plugins"]["entries"]["cockpit-cards"]["settings"]["chat_id"], 391230543)
