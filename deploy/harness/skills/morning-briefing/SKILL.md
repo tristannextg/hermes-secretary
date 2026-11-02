@@ -18,7 +18,8 @@ Your most important task of the day: take real effort.
    `summarize_repo_changes` (48 h, 96 h on a Monday) and yesterday's briefing note. Work out what
    Tristan is in the middle of and what they seem stuck on.
 2. Add the cockpit: what their agents did overnight and what waits on them (skill `worklog` since
-   yesterday 18:00, `inbox_list`), in three lines at most.
+   yesterday 18:00, `inbox_list`, and `cards_held {since_h: 14}`: the cards kept off their phone
+   overnight, limits, results to review, messages), in three lines at most.
 3. Repo section: weight by relevance to Tristan (GitHub tristannextg): their commits/PRs, reviews
    requested from them and changes in the areas their notes show them on get detail and a "why it
    matters to you"; colleagues' notable PRs and merges are named; the rest gets one line at most.

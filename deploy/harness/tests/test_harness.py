@@ -118,6 +118,53 @@ def fetch_usage(command=None, env=None, timeout=8):
     CALLS.append(command)
     return {"five_hour": 1}, None
 '''
+# A stand-in for the official client: each account answers as SCRIPT says ("ok", or an HTTP
+# status it refuses with), and RUNS records which account each request ran on.
+OFFICIAL_SDK = '''
+SCRIPT, RUNS = {}, []
+class ClaudeAPIError(RuntimeError):
+    def __init__(self, message, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
+class Chunk:
+    def __init__(self, text, final=False):
+        self.text = text
+        if final:
+            self._response = {"text": text}
+class Stream:
+    def __init__(self, gen):
+        self.gen, self.closed = gen, False
+    def __iter__(self):
+        return self
+    def __next__(self):
+        return next(self.gen)
+    def close(self):
+        self.closed = True
+        self.gen.close()
+class AsyncStream:
+    def __init__(self, stream):
+        self.stream = stream
+class Client:
+    def __init__(self, command=None, args=None, timeout=180, **_):
+        self.command = [command] + list(args or [])
+    def _create(self, **kwargs):
+        account = self.command[-1]
+        def gen():
+            RUNS.append(account)
+            answer = SCRIPT.get(account, "ok")
+            if answer == "ok":
+                yield Chunk("hello from " + account)
+                yield Chunk("", final=True)
+                return
+            if answer == "mid":
+                yield Chunk("half")
+            raise ClaudeAPIError("refused", answer if isinstance(answer, int) else 429)
+        return Stream(gen())
+    def cancel(self):
+        pass
+    def close(self):
+        pass
+'''
 
 
 class ClaudeAccounts(unittest.TestCase):
@@ -131,6 +178,8 @@ class ClaudeAccounts(unittest.TestCase):
             f.write(OFFICIAL_INIT)
         with open(os.path.join(official, "directsdk_setup.py"), "w") as f:
             f.write(OFFICIAL_SETUP)
+        with open(os.path.join(official, "directsdk.py"), "w") as f:
+            f.write(OFFICIAL_SDK)
         self.wrapper = os.path.join(home, "bin", "claude-as")
         os.makedirs(os.path.dirname(self.wrapper))
         with open(self.wrapper, "w") as f:
@@ -139,7 +188,9 @@ class ClaudeAccounts(unittest.TestCase):
         with open(os.path.join(home, "claude-accounts.json"), "w") as f:
             json.dump({"wrapper": self.wrapper, "accounts": [
                 {"provider": "claude-work", "account": "work"},
-                {"provider": "claude-dx1", "account": "Duxalpha1", "label": "Claude (dx1)"}]}, f)
+                {"provider": "claude-dx1", "account": "Duxalpha1", "label": "Claude (dx1)"},
+                {"provider": "claude-dx2", "account": "Duxalpha2"}],
+                "auto": {"provider": "claude-auto", "usage_ttl_s": 60}}, f)
         self.registered = {}
         providers = types.ModuleType("providers")
         providers.register_provider = lambda p: self.registered.__setitem__(p.name, p)
@@ -150,8 +201,22 @@ class ClaudeAccounts(unittest.TestCase):
         usage = types.ModuleType("agent.account_usage")
         usage.AccountUsageSnapshot = lambda **kw: kw
         agent = types.ModuleType("agent")
+        self.emitted = []
+        emitted = self.emitted
+
+        class StatusOutputMixin:
+            def _emit_diagnostic_status(self, message):
+                emitted.append(message)
+
+        status = types.ModuleType("agent.status_output")
+        status.StatusOutputMixin = self.Mixin = StatusOutputMixin
+        self.chain = ["claude-auto", "custom"]
+        cfg = types.ModuleType("hermes_cli.config")
+        cfg.load_config = lambda: {"model": {"provider": self.chain[0]},
+                                   "fallback_providers": [{"provider": p} for p in self.chain[1:]]}
         self.mods = {"providers": providers, "hermes_constants": consts, "agent": agent,
-                     "agent.account_usage": usage}
+                     "agent.account_usage": usage, "agent.status_output": status,
+                     "hermes_cli": types.ModuleType("hermes_cli"), "hermes_cli.config": cfg}
         patcher = mock.patch.dict(sys.modules, self.mods)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -163,7 +228,8 @@ class ClaudeAccounts(unittest.TestCase):
     def test_one_provider_per_account_running_the_wrapper(self):
         self.plugin()
         self.assertEqual(sorted(self.registered),
-                         ["claude-dx1", "claude-subscription-directsdk-experimental", "claude-work"])
+                         ["claude-auto", "claude-dx1", "claude-dx2", "claude-subscription-directsdk-experimental",
+                          "claude-work"])
         work = self.registered["claude-work"]
         client = work.create_client(command="claude", args=[], timeout=5)
         self.assertEqual(client.kw["command"], self.wrapper)
@@ -204,9 +270,143 @@ class ClaudeAccounts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "needs provider and account"):
             mod.load_accounts(mod.Path(bad))
 
+    # ---- claude-auto: the first account with headroom
+    NOW = 1_793_369_000
+
+    def auto(self, usage=None, script=None):
+        """The plugin, the official stub's SCRIPT/RUNS, and claude-auto's client, on `usage`."""
+        mod = self.plugin()
+        sdk = next(m for n, m in sys.modules.items() if n.endswith("experimental.directsdk"))
+        sdk.SCRIPT.clear()
+        sdk.SCRIPT.update(script or {})
+        sdk.RUNS.clear()
+        profile = self.registered["claude-auto"]
+        client = profile.create_client(command="claude", args=[], timeout=5)
+        h = client.headroom
+        self.readings = 0
+
+        def fetch():
+            self.readings += 1
+            if isinstance(usage, Exception):
+                raise usage
+            return usage or {}
+
+        h.fetch, h.clock = fetch, lambda: self.now
+        self.now = self.NOW
+        return mod, sdk, client
+
+    def full(self, window="seven_day", reset_in=3600):
+        return {window: {"pct": 100, "resets_at": self.NOW + reset_in}}
+
+    def ask(self, client):
+        return [c.text for c in client.chat.completions.create(model="sonnet", messages=[], stream=True)]
+
+    def test_auto_skips_a_full_account_without_trying_it(self):
+        _, sdk, client = self.auto({"work": self.full(), "Duxalpha1": {"five_hour": {"pct": 40}}})
+        self.assertEqual(self.ask(client), ["hello from Duxalpha1", ""])
+        self.assertEqual(sdk.RUNS, ["Duxalpha1"])  # work was never started
+        self.assertEqual(client.chat.completions.create(model="sonnet", messages=[]), {"text": ""})
+        self.assertEqual(sdk.RUNS, ["Duxalpha1", "Duxalpha1"])
+        self.assertEqual(self.readings, 1)  # cached for usage_ttl_s
+        self.now += 61
+        self.ask(client)
+        self.assertEqual(self.readings, 2)
+
+    def test_auto_takes_the_first_in_order_and_a_reset_window_counts_as_headroom(self):
+        _, sdk, client = self.auto({"work": {"seven_day": {"pct": 100, "resets_at": self.NOW - 5}},
+                                    "Duxalpha1": {}})
+        self.ask(client)
+        self.assertEqual(sdk.RUNS, ["work"])
+
+    def test_a_refusal_marks_the_account_until_its_reset_and_the_next_one_serves(self):
+        _, sdk, client = self.auto({"work": {"five_hour": {"pct": 97, "resets_at": self.NOW + 900}}},
+                                   script={"work": 429})
+        self.assertEqual(self.ask(client), ["hello from Duxalpha1", ""])
+        self.assertEqual(sdk.RUNS, ["work", "Duxalpha1"])
+        with open(os.path.join(self.dir.name, "state", "claude-headroom.json")) as f:
+            marks = json.load(f)["marks"]
+        self.assertEqual(marks["work"]["until"], self.NOW + 15 * 60)  # no window is full: limited_s
+        self.ask(client)
+        self.assertEqual(sdk.RUNS, ["work", "Duxalpha1", "Duxalpha1"])  # not tried again per turn
+        # another process (cron, the CLI) reads the same marks
+        other = self.registered["claude-auto"].create_client(timeout=5)
+        self.assertEqual(other.headroom.pick()[0], "Duxalpha1")
+        self.now += 15 * 60 + 1
+        sdk.SCRIPT.clear()
+        self.ask(client)
+        self.assertEqual(sdk.RUNS[-1], "work")
+        self.assertNotIn("work", client.headroom.marks)
+
+    def test_only_a_limit_or_a_login_moves_on_and_never_after_output(self):
+        _, sdk, client = self.auto({}, script={"work": 529})
+        with self.assertRaises(sdk.ClaudeAPIError) as e:
+            self.ask(client)
+        self.assertEqual(e.exception.status_code, 529)
+        self.assertEqual(sdk.RUNS, ["work"])
+        sdk.SCRIPT.update(work="mid")
+        sdk.RUNS.clear()
+        with self.assertRaises(sdk.ClaudeAPIError):
+            self.ask(client)
+        self.assertEqual(sdk.RUNS, ["work"])  # output went out: no second account repeats it
+        sdk.SCRIPT.update(work=401)
+        sdk.RUNS.clear()
+        self.ask(client)
+        self.assertEqual(sdk.RUNS, ["work", "Duxalpha1"])
+        self.assertEqual(client.headroom.marks["work"]["until"], self.NOW + 1800)
+
+    def test_all_out_is_one_429_with_the_earliest_reset_and_no_request(self):
+        _, sdk, client = self.auto({"work": self.full(reset_in=7200), "Duxalpha1": self.full("five_hour", 1800),
+                                    "Duxalpha2": self.full(reset_in=86400 * 2)},
+                                   script={"work": 429, "Duxalpha1": 429, "Duxalpha2": 429})
+        with self.assertRaises(sdk.ClaudeAPIError) as e:
+            self.ask(client)
+        # readings can be behind: each full account is tried once, and its refusal marks it
+        self.assertEqual(sdk.RUNS, ["work", "Duxalpha1", "Duxalpha2"])
+        self.assertEqual(e.exception.status_code, 429)
+        self.assertEqual(e.exception.body["error"]["resets_at"], self.NOW + 1800)
+        self.assertIn("rate limit", str(e.exception))
+        self.assertIn("resets in 1800 seconds", str(e.exception))
+        with self.assertRaises(sdk.ClaudeAPIError):
+            self.ask(client)
+        self.assertEqual(len(sdk.RUNS), 3)  # the next turn starts no claude at all
+
+    def test_without_readings_it_goes_by_its_own_refusals(self):
+        _, sdk, client = self.auto(RuntimeError("laptop asleep"), script={"work": 429})
+        self.ask(client)
+        self.ask(client)
+        self.assertEqual(sdk.RUNS, ["work", "Duxalpha1", "Duxalpha1"])
+
+    def test_planned_switch_notices_are_kept_out_and_everything_else_shown(self):
+        self.plugin()
+        agent = self.Mixin()
+        planned = [
+            ("⚠️ Model fallback: sonnet via claude-auto unavailable (rate limit); using "
+             "qwen3.8-flash-next-iq3_s via custom. Primary retry eligible in ~60 s; recovery is not guaranteed."),
+            ("✅ Primary model restored: sonnet via claude-auto; fallback qwen3.8-flash-next-iq3_s via custom "
+             "is no longer active."),
+            "⚠️ Model fallback: sonnet via claude-work unavailable (rate limit); using sonnet via claude-dx1.",
+            "⚠️ Provider fallback: claude-auto/sonnet unavailable; using custom/qwen for this response.",
+        ]
+        shown = [
+            "⚠️ Model fallback: sonnet via claude-auto unavailable (auth); using gpt via openrouter.",
+            "🚫 This account is not entitled to opus via claude-auto; it will be skipped until restart.",
+            "Context compaction failed: summary model unavailable",
+        ]
+        for m in planned + shown:
+            agent._emit_diagnostic_status(m)
+        self.assertEqual(self.emitted, shown)
+        self.plugin()  # a second import does not wrap twice
+        agent._emit_diagnostic_status(shown[0])
+        self.assertEqual(self.emitted, shown + shown[:1])
+
 
 # ------------------------------------------------------------ cockpit-cards
 cards = load("cockpit_cards_under_test", os.path.join(HARNESS, "plugins", "cockpit-cards", "__init__.py"))
+with mock.patch.dict(sys.modules, {"hermes_yaml": types.ModuleType("hermes_yaml")}):
+    # the rule as install.sh configures it: the one place it lives
+    RELAY_RULE = load("configure_for_rule", os.path.join(HARNESS, "configure.py")).RELAY
+with open(os.path.join(HERE, "fixtures", "notify-pending.json")) as _f:
+    RECORDED = json.load(_f)
 
 
 def card(cid="c1", state="open", rev=1, **kw):
@@ -228,6 +428,9 @@ class FakeApi:
         self.calls.append((method, args, why))
         if method == "notify.pending":
             return self.pending
+        if method == "session.get" and "session.get" not in self.answers:
+            failure = self.failures.get(args["id"]) if hasattr(self, "failures") else None
+            return {"ok": True, "result": {"id": args["id"], "state": "failed", "failure": failure, "prs": []}}
         return self.answers.get(method, {"ok": True, "result": {"ok": True, "message": "Sent to x: Allow once"}})
 
 
@@ -239,8 +442,9 @@ class CockpitCards(unittest.TestCase):
         self.sent, self.edits, self.next = [], [], 100
         self.relay = self.make()
 
-    def make(self):
-        relay = cards.Relay(391230543, os.path.join(self.dir.name, "state", "cards.json"), call=self.api)
+    def make(self, rule="configured"):
+        rule = RELAY_RULE if rule == "configured" else rule
+        relay = cards.Relay(391230543, os.path.join(self.dir.name, "state", "cards.json"), call=self.api, rule=rule)
 
         async def send(text, rows, silent):
             self.next += 1
@@ -333,6 +537,144 @@ class CockpitCards(unittest.TestCase):
         self.relay = self.make()
         self.assertEqual(self.poll(), 0)
         self.assertEqual(len(self.sent), 1)
+
+    # ---- the rule: only what needs Tristan now
+    def write_state(self, name, data):
+        os.makedirs(os.path.join(self.dir.name, "state"), exist_ok=True)
+        with open(os.path.join(self.dir.name, "state", name), "w") as f:
+            json.dump(data, f)
+
+    def test_recorded_cards_only_questions_and_unfixable_failures_reach_the_phone(self):
+        recorded = RECORDED[-1]["result"]["cards"]
+        now = time.time()
+        # replayed as they first arrived (open, rev 1), then as the cockpit closed them
+        arrived = [dict(c, state="open", rev=1, closed=None, at=now) for c in recorded]
+        failures = [c for c in recorded if c["kind"] == "failure"]
+        # what session.get said of the failed chats: half stuck at a limit, one watched by keep-alive
+        self.api.failures = {c["id"]: {"type": "rate_limit" if i % 2 else "process_exit"}
+                             for i, c in enumerate(failures)}
+        kept = next(c for i, c in enumerate(failures) if i % 2 == 0)
+        self.write_state("keep-alive.json", {"watches": [{"vm": kept["vm"], "id": kept["id"]}]})
+        self.relay.first_run = False
+        self.api.pending = {"ok": True, "result": {"via": "hermes", "night": False, "cards": arrived}}
+        self.poll()
+        unfixable = {c["id"] for c in failures if self.api.failures[c["id"]]["type"] != "rate_limit"} - {kept["id"]}
+        # cards from before the cockpit named their item are each their own message
+        def episode(c):
+            return c["item"] or (f"{c['vm']}/{c['id']}#e{c['episode']}" if c["episode"] is not None else c["card"])
+        items = {episode(c) for c in recorded if c["kind"] == "blocking"}
+        items |= {episode(c) for c in failures if c["id"] in unfixable}
+        self.assertEqual(len(self.sent), len(items))  # one message per chat and episode
+        silent = {c["card"]: c["silent"] for c in recorded}
+        self.assertEqual([m[3] for m in self.sent], [silent[self.relay.card_of_message(m[0])] for m in self.sent])
+        self.assertIn(True, silent.values())  # the record has night cards
+        held = self.relay.state["held"]
+        self.assertEqual(sorted({h["why"] for h in held}),
+                         ["a rate_limit failure the cockpit's account rules handle",
+                          "a usage limit the cockpit handles", "keep-alive revives it"])
+        self.assertEqual(sum(h["kind"] == "limit" for h in held), sum(c["kind"] == "limit" for c in recorded))
+        self.assertFalse(any("stuck at its usage limit" in s[1] for s in self.sent))
+        # the cockpit closes them: only delivered messages are edited, a held card stays held
+        self.api.pending["result"]["cards"] = [dict(c, rev=2, at=now) for c in recorded]
+        self.poll()
+        self.assertEqual(len(self.sent), len(items))
+        self.assertEqual(len(self.edits), sum(1 for c in recorded if c["kind"] != "limit" and c["state"] == "closed"
+                                              and self.relay.state["cards"][c["card"]].get("thread")
+                                              and self.relay.state["threads"][self.relay.state["cards"][c["card"]]
+                                                                              ["thread"]]["card"] == c["card"]))
+
+    def test_messages_reviews_and_limits_are_held_with_why(self):
+        self.api.pending["result"]["cards"] = [
+            card("m1", kind="message", vm="dev-cloud", id="d441d8b2", html="<b>Secretary</b>\nall green", buttons=[]),
+            card("r1", kind="review", item="dev-2/aaaa0002/review#t4"),
+            card("l1", kind="limit", html="<b>x</b> is stuck at its usage limit"),
+            card("b1", item="dev-1/3d76bde7/blocking#e4")]
+        self.poll()
+        self.assertEqual([s[1] for s in self.sent], ["<b>x</b> needs you"])
+        self.assertEqual([(h["card"], h["why"]) for h in self.relay.state["held"]],
+                         [("m1", "a message, nothing to decide"), ("r1", "a result to review, nothing blocks"),
+                          ("l1", "a usage limit the cockpit handles")])
+
+    def test_one_message_per_chat_and_episode_edited_in_place(self):
+        item = "dev-1/3d76bde7/blocking#e4"
+        self.api.pending["result"]["cards"] = [card("c1", item=item)]
+        self.poll()
+        # "later", then it comes back as a new card of the same item, the old one "sent again below"
+        self.api.pending["result"]["cards"] = [card("c1", item=item, state="later", rev=2, until=time.time())]
+        self.poll()
+        self.api.pending["result"]["cards"] = [card("c1", item=item, state="closed", rev=3, closed="sent again below"),
+                                               card("c2", item=item, html="<b>x</b> needs you (again)")]
+        self.poll()
+        self.assertEqual(len(self.sent), 1)
+        mid = self.sent[0][0]
+        self.assertEqual(self.edits[-1], (mid, "<b>x</b> needs you (again)", [
+            [("1. Allow once", "nvc:c2:1"), ("2. Deny", "nvc:c2:2")],
+            [("open in the cockpit", "nvc:c2:o"), ("later", "nvc:c2:l")]]))
+        self.assertEqual(self.relay.card_of_message(mid), "c2")  # a reply answers the live card
+        n = len(self.edits)
+        self.poll()
+        self.assertEqual(len(self.edits), n)
+        # the next episode of the same chat is a new message
+        self.api.pending["result"]["cards"] = [card("c3", item="dev-1/3d76bde7/blocking#e5")]
+        self.poll()
+        self.assertEqual(len(self.sent), 2)
+
+    def test_a_chat_tristan_asked_about_gets_every_card_through(self):
+        self.write_state("tell-me.json", {"watches": [
+            {"vm": "dev-2", "id": "aaaa0002", "until": time.time() + 3600, "why": "Tristan: tell me about it"}]})
+        self.api.pending["result"]["cards"] = [card("r1", kind="review", vm="dev-2", id="aaaa0002"),
+                                               card("r2", kind="review", vm="dev-2", id="bbbb0002"),
+                                               card("l1", kind="limit", vm="dev-2", id="aaaa0002")]
+        self.poll()
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(self.relay.card_of_message(self.sent[0][0]), "r1")
+
+    def test_a_watched_pr_is_told_once_when_ready_then_the_watch_ends(self):
+        self.write_state("tell-me.json", {"watches": [
+            {"pr": 4781, "repo": "Arnold-NextG/nxguide", "until": time.time() + 3600, "why": "Tristan", "added": 1},
+            {"pr": 4782, "until": time.time() - 1, "why": "Tristan", "added": 2}]})
+        pr = {"number": 4781, "repo": "Arnold-NextG/nxguide", "state": "OPEN", "draft": False,
+              "ci": {"pass": 20, "fail": 0, "pending": 1, "total": 21}, "review": "APPROVED"}
+        sessions = {"ok": True, "result": {"sessions": [{"id": "a87437ff", "vm": "dev-1", "name": "flaky test",
+                                                         "prs": [pr]}]}}
+        self.api.answers["sessions.list"] = sessions
+        self.api.pending["result"]["night"] = True
+        self.poll()
+        self.assertEqual(self.sent, [])  # CI still running
+        self.relay.told_at -= 61
+        pr["ci"] = {"pass": 21, "fail": 0, "pending": 0, "total": 21}
+        self.poll()
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn("#4781 is ready to merge", self.sent[0][1])
+        self.assertTrue(self.sent[0][3])  # silent: the cockpit's night
+        with open(os.path.join(self.dir.name, "state", "tell-me.json")) as f:
+            self.assertEqual(json.load(f), {"watches": []})
+        self.relay.told_at -= 61
+        self.poll()
+        self.assertEqual(len(self.sent), 1)
+        # clean without a review: only session.get's merge state can tell
+        self.assertEqual(cards.pr_verdict(dict(pr, review=None)), "clean?")
+        self.assertEqual(cards.pr_verdict(dict(pr, review=None, merge_state="CLEAN")), "ready")
+        self.assertIsNone(cards.pr_verdict(dict(pr, review=None, merge_state="BLOCKED")))
+        self.assertEqual(cards.pr_verdict(dict(pr, state="MERGED")), "merged")
+        self.assertIsNone(cards.pr_verdict(dict(pr, review="CHANGES_REQUESTED")))
+
+    def test_without_a_rule_only_questions_go_out_and_it_says_so(self):
+        with self.assertLogs(cards.logger, "ERROR"):
+            self.relay = self.make(rule=None)
+        self.api.pending["result"]["cards"] = [card("f1", kind="failure"), card("b1")]
+        self.poll()
+        self.assertEqual([self.relay.card_of_message(s[0]) for s in self.sent], ["b1"])
+
+    def test_a_delivery_state_from_before_threads_keeps_its_messages(self):
+        self.write_state("cards.json", {"cards": {"c9": {"msg": 77, "rev": 1, "state": "open", "at": time.time()},
+                                                  "c8": {"msg": None, "rev": 1, "state": "skipped", "at": 1}}})
+        self.relay = self.make()
+        self.assertEqual(self.relay.card_of_message(77), "c9")
+        self.api.pending["result"]["cards"] = [card("c9", state="closed", rev=2, closed="answered elsewhere")]
+        self.poll()
+        self.assertEqual(self.edits[-1][0], 77)
+        self.assertEqual(self.sent, [])
 
 
 # ------------------------------------------------------------ keep-alive
@@ -448,6 +790,8 @@ class HermesOps(unittest.TestCase):
         self.ops = load("hermes_ops_under_test", os.path.join(HARNESS, "bin", "hermes_ops_mcp.py"))
         d = self.dir.name
         self.ops.WATCHES = os.path.join(d, "state", "keep-alive.json")
+        self.ops.TELL_ME = os.path.join(d, "state", "tell-me.json")
+        self.ops.CARDS = os.path.join(d, "state", "cockpit-cards.json")
         self.ops.MEMORY = os.path.join(d, "memory")
         self.ops.DOCS = os.path.join(d, "docs")
         os.makedirs(self.ops.MEMORY)
@@ -475,6 +819,41 @@ class HermesOps(unittest.TestCase):
                 self.ops.keepalive_add(bad)
         self.ops.keepalive_remove({"vm": "dev-3", "id": "0eaee10c"})
         self.assertEqual(self.ops.load_watches(), [])
+
+    def test_tell_me_watches_name_a_pr_or_a_chat_and_say_who_asked(self):
+        r = json.loads(self.ops.tellme_add({"pr": 4781, "why": "Tristan: tell me when it can merge"}))
+        self.assertEqual((r["watch"]["pr"], r["watch"]["repo"]), (4781, "Arnold-NextG/nxguide"))
+        self.assertGreater(r["watch"]["until"], time.time() + 71 * 3600)
+        self.ops.tellme_add({"pr": "4781", "why": "again"})
+        self.ops.tellme_add({"vm": "dev-2", "id": "aaaa0002", "until": "4h", "why": "Tristan: watch it"})
+        self.assertEqual(len(self.ops.load_tell_me()), 2)
+        self.assertEqual(oct(os.stat(self.ops.TELL_ME).st_mode & 0o777), "0o600")
+        for bad in ({"why": "x"}, {"pr": 1, "why": " "}, {"pr": -3, "why": "x"}, {"pr": 1, "repo": "evil/repo", "why": "x"},
+                    {"vm": "dev-2", "id": "zz", "why": "x"}, {"pr": 1, "until": "400h", "why": "x"}):
+            with self.assertRaises(ValueError):
+                self.ops.tellme_add(bad)
+        self.ops.tellme_remove({"pr": 4781})
+        self.assertEqual([w.get("vm") for w in self.ops.load_tell_me()], ["dev-2"])
+        writes = {t["name"] for t in self._tools() if not t["annotations"]["readOnlyHint"]}
+        self.assertEqual(writes, {"keepalive_add", "keepalive_remove", "tellme_add", "tellme_remove"})
+
+    def _tools(self):
+        out = io.StringIO()
+        with mock.patch.object(sys, "stdout", out):
+            self.ops.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        return json.loads(out.getvalue())["result"]["tools"]
+
+    def test_held_cards_are_listed_since_a_time_and_redacted(self):
+        now = time.time()
+        os.makedirs(os.path.dirname(self.ops.CARDS))
+        with open(self.ops.CARDS, "w") as f:
+            json.dump({"cards": {}, "held": [
+                {"card": "c1", "kind": "limit", "text": "old", "at": now - 3 * 86400, "why": "a usage limit"},
+                {"card": "c2", "kind": "message", "text": "token=abcdefghijkl here", "at": now - 60, "why": "a message"}]}, f)
+        held = json.loads(self.ops.cards_held({}))["held"]
+        self.assertEqual([h["card"] for h in held], ["c2"])
+        self.assertNotIn("abcdefghijkl", held[0]["text"])
+        self.assertEqual(len(json.loads(self.ops.cards_held({"since_h": 96}))["held"]), 2)
 
     def test_memory_is_read_only_confined_and_redacted(self):
         self.assertIn("rule.md: merge only on request", self.ops.memory_list({}))
@@ -591,8 +970,8 @@ class Configure(unittest.TestCase):
                "memory": {"memory_enabled": True}, "plugins": {"enabled": ["other"]},
                "platforms": {"discord": {"enabled": True}}}
         new = self.cfg.apply(old, 391230543, "keep")
-        self.assertEqual(new["model"], {"provider": "claude-work", "default": "sonnet"})
-        self.assertEqual([e["provider"] for e in new["fallback_providers"]], ["claude-dx1", "claude-dx2", "custom"])
+        self.assertEqual(new["model"], {"provider": "claude-auto", "default": "sonnet"})
+        self.assertEqual([e["provider"] for e in new["fallback_providers"]], ["custom"])
         self.assertEqual(new["fallback_providers"][-1]["key_env"], "STRATA_API_KEY")
         self.assertEqual(new["terminal"]["docker_forward_env"], [])
         self.assertFalse(new["terminal"]["docker_network"])
@@ -602,7 +981,9 @@ class Configure(unittest.TestCase):
         self.assertEqual(new["plugins"]["entries"]["cockpit-cards"]["settings"]["chat_id"], 391230543)
         self.assertIs(new["platforms"]["telegram"]["enabled"], False)  # never left to the env token
         self.assertTrue(new["platforms"]["discord"]["enabled"])
-        self.assertEqual(new["cron"], {"model": "opus", "model_provider": "claude-work"})
+        self.assertEqual(new["cron"], {"model": "opus", "model_provider": "claude-auto"})
+        self.assertEqual(new["plugins"]["entries"]["cockpit-cards"]["settings"]["relay"]["send"],
+                         ["blocking", "failure"])
         self.assertEqual(new["auth"]["adopt_external_logins"], False)
         self.assertNotIn("private", json.dumps(new))
         self.assertEqual(old["model"]["provider"], "custom")  # the input is not mutated

@@ -7,6 +7,11 @@ or confined to one file:
 
 - keepalive_add / keepalive_list / keepalive_remove: the watches the keep-alive cron script
   (keep_alive.py) works through, in $HERMES_HOME/state/keep-alive.json.
+- tellme_add / tellme_list / tellme_remove: what Tristan asked to be told about (a PR ready to
+  merge, a chat's every card), in $HERMES_HOME/state/tell-me.json, which the cockpit-cards
+  relay works through.
+- cards_held: the cockpit's cards the relay kept off Telegram (its rule: only what needs
+  Tristan now), for "what's up?" and the morning briefing.
 - memory_list / memory_read / memory_search: Tristan's shared Claude memory (Syncthing'd from
   the laptop), read-only, confined to that directory.
 - cockpit_doc: the cockpit's README.md / API.md as shipped into the cockpit-help skill.
@@ -20,12 +25,16 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from zoneinfo import ZoneInfo
 
 HOME = os.path.expanduser(os.environ.get("HERMES_HOME", "~/.hermes"))
 WATCHES = os.path.join(HOME, "state", "keep-alive.json")
+TELL_ME = os.path.join(HOME, "state", "tell-me.json")
+CARDS = os.path.join(HOME, "state", "cockpit-cards.json")
 MEMORY = os.path.expanduser(
     os.environ.get("HERMES_SHARED_MEMORY", "~/.claude/projects/-home-vmadmin-nxguide-dev/memory")
 )
@@ -131,6 +140,96 @@ def keepalive_remove(args: dict) -> str:
         raise ValueError(f"no watch for {vm}/{sid}")
     save_watches(left)
     return json.dumps({"ok": True, "watches": len(left)})
+
+
+# ------------------------------------------------------------ "tell me when ...", held cards
+def load_tell_me() -> list:
+    try:
+        with open(TELL_ME) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return []
+    return data.get("watches", []) if isinstance(data, dict) else []
+
+
+def save_tell_me(watches: list) -> None:
+    os.makedirs(os.path.dirname(TELL_ME), mode=0o700, exist_ok=True)
+    tmp = TELL_ME + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump({"watches": watches}, f, indent=1)
+    os.replace(tmp, TELL_ME)
+
+
+def _tell_me_target(args: dict) -> dict:
+    out = {}
+    if args.get("pr") not in (None, ""):
+        pr = args["pr"]
+        if isinstance(pr, bool) or not str(pr).isdigit() or int(pr) <= 0:
+            raise ValueError("pr is a PR number")
+        out["pr"] = int(pr)
+        repo = str(args.get("repo") or REPOS[0])
+        if repo not in REPOS:
+            raise ValueError(f"repo must be one of {', '.join(REPOS)}")
+        out["repo"] = repo
+    if args.get("vm") or args.get("id"):
+        vm, sid = str(args.get("vm") or ""), str(args.get("id") or "")
+        if not VM_NAME.match(vm) or not SESSION_ID.match(sid):
+            raise ValueError("vm is a VM name (dev-1, dev-cloud, ...) and id a session's 8 hex digits")
+        out["vm"], out["id"] = vm, sid
+    if not out:
+        raise ValueError("name a pr, or a chat (vm and id), or both")
+    return out
+
+
+def tellme_add(args: dict) -> str:
+    target = _tell_me_target(args)
+    until = parse_until(args.get("until") or "72h")
+    now = int(time.time())
+    if until <= now:
+        raise ValueError("until is in the past")
+    if until - now > 14 * 86400:
+        raise ValueError("a watch lasts at most 14 days")
+    why = " ".join(str(args.get("why") or "").split())
+    if not why:
+        raise ValueError("why is required: what Tristan asked, in one sentence")
+    key = (target.get("pr"), target.get("vm"), target.get("id"))
+    watches = [w for w in load_tell_me() if (w.get("pr"), w.get("vm"), w.get("id")) != key]
+    watch = dict(target, until=until, why=why[:300], added=now)
+    watches.append(watch)
+    save_tell_me(watches)
+    return json.dumps({"ok": True, "watch": watch, "watches": len(watches)})
+
+
+def tellme_list(_args: dict) -> str:
+    return json.dumps({"watches": load_tell_me()}, indent=1)
+
+
+def tellme_remove(args: dict) -> str:
+    target = _tell_me_target(args)
+    key = (target.get("pr"), target.get("vm"), target.get("id"))
+    watches = load_tell_me()
+    left = [w for w in watches if (w.get("pr"), w.get("vm"), w.get("id")) != key]
+    if len(left) == len(watches):
+        raise ValueError(f"no such watch: {target}")
+    save_tell_me(left)
+    return json.dumps({"ok": True, "watches": len(left)})
+
+
+def cards_held(args: dict) -> str:
+    """The held log, newest last, since `since_h` hours (default 24)."""
+    hours = float(args.get("since_h") or 24)
+    try:
+        with open(CARDS) as f:
+            held = (json.load(f) or {}).get("held") or []
+    except FileNotFoundError:
+        return json.dumps({"held": [], "note": "the relay has not run yet"})
+    since = time.time() - hours * 3600
+    berlin = ZoneInfo("Europe/Berlin")
+    out = [dict(h, text=redact(h.get("text") or ""),
+                when=datetime.datetime.fromtimestamp(h["at"], tz=berlin).isoformat(timespec="minutes"))
+           for h in held if h.get("at", 0) >= since]
+    return json.dumps({"held": out, "since_h": hours}, indent=1)
 
 
 # ------------------------------------------------------------ shared memory, cockpit docs
@@ -404,6 +503,23 @@ TOOLS = {
     "keepalive_list": (keepalive_list, "The keep-alive watches now.", _obj({})),
     "keepalive_remove": (
         keepalive_remove, "End one keep-alive watch.", _obj({"vm": S, "id": S}, ("vm", "id"))),
+    "tellme_add": (
+        tellme_add,
+        ("Tell Tristan once a PR is ready to merge (or merged, or closed), and/or let every card of "
+         "one chat reach Telegram, as Tristan asked. `pr` and/or `vm`+`id`; `until`: ISO time or "
+         "e.g. '72h' (default 72h); `why`: what Tristan asked."),
+        _obj({"pr": INT, "repo": S, "vm": S, "id": S, "until": S, "why": S}, ("why",)),
+    ),
+    "tellme_list": (tellme_list, "What Tristan asked to be told about, now.", _obj({})),
+    "tellme_remove": (
+        tellme_remove, "End one 'tell me' watch (the same pr and/or vm+id).",
+        _obj({"pr": INT, "repo": S, "vm": S, "id": S})),
+    "cards_held": (
+        cards_held,
+        ("The cockpit's cards the relay kept off Telegram (limits, messages, results to review, "
+         "failures somebody else fixes), each with why, since `since_h` hours (default 24)."),
+        _obj({"since_h": INT}),
+    ),
     "memory_list": (
         memory_list,
         "Tristan's shared Claude memory files (name: description), optionally filtered by `query`.",
@@ -441,6 +557,9 @@ TOOLS = {
 }
 
 
+WRITES = {"keepalive_add", "keepalive_remove", "tellme_add", "tellme_remove"}
+
+
 def reply(id_, result=None, error=None) -> None:
     msg = {"jsonrpc": "2.0", "id": id_}
     if error is not None:
@@ -464,7 +583,7 @@ def handle(req: dict) -> None:
     elif method == "tools/list":
         reply(id_, {"tools": [
             {"name": n, "description": d, "inputSchema": s,
-             "annotations": {"readOnlyHint": not n.startswith("keepalive_") or n == "keepalive_list"}}
+             "annotations": {"readOnlyHint": n not in WRITES}}
             for n, (_, d, s) in TOOLS.items()
         ]})
     elif method == "tools/call":

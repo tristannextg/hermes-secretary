@@ -89,7 +89,9 @@ cat >"$H/claude-accounts.json" <<EOF
   {"provider": "claude-work", "account": "work", "label": "Claude (work)"},
   {"provider": "claude-dx1", "account": "Duxalpha1", "label": "Claude (dx1)"},
   {"provider": "claude-dx2", "account": "Duxalpha2", "label": "Claude (dx2)"}
- ]}
+ ],
+ "auto": {"provider": "claude-auto", "label": "Claude (work, dx1, dx2: the first with headroom)",
+          "full_pct": 99, "usage_ttl_s": 60, "limited_s": 900, "login_s": 1800}}
 EOF
 
 [ -f "$H/SOUL.md.before-harness" ] || cp "$H/SOUL.md" "$H/SOUL.md.before-harness" 2>/dev/null || true

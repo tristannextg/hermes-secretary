@@ -70,5 +70,50 @@ mut M17 HermesMcpAgentMode.test_agent_mode_has_the_vault_and_the_log_to_read_onl
 mut M18 CockpitCards.test_nothing_is_relayed_unless_the_cockpit_hands_cards_to_hermes \
   harness/plugins/cockpit-cards/__init__.py 'return min(BACKOFF_MAX_S, poll_s * 2 ** min(self.failures, 10))' 'return poll_s'
 
+CA=harness/plugins/model-providers/claude-accounts/__init__.py
+CC=harness/plugins/cockpit-cards/__init__.py
+mut M19 ClaudeAccounts.test_auto_skips_a_full_account_without_trying_it $CA \
+  '                if self.full_until(a, now):' '                if False:'
+mut M20 ClaudeAccounts.test_auto_takes_the_first_in_order_and_a_reset_window_counts_as_headroom $CA \
+  'and reset > now:' ':'
+mut M21 ClaudeAccounts.test_a_refusal_marks_the_account_until_its_reset_and_the_next_one_serves $CA \
+  'self.marks[account] = {"until": until,' 'self.marks[account + "-x"] = {"until": until,'
+mut M22 ClaudeAccounts.test_only_a_limit_or_a_login_moves_on_and_never_after_output $CA \
+  'if started or self.closed or status not in SWITCH_ON:' 'if self.closed or status not in SWITCH_ON:'
+mut M23 ClaudeAccounts.test_only_a_limit_or_a_login_moves_on_and_never_after_output $CA \
+  'SWITCH_ON = {429: "limit", 402: "limit", 401: "login"}' 'SWITCH_ON = {429: "limit", 402: "limit", 401: "login", 529: "limit"}'
+mut M24 ClaudeAccounts.test_all_out_is_one_429_with_the_earliest_reset_and_no_request $CA \
+  'return min(ends) if ends else None' 'return max(ends) if ends else None'
+mut M25 ClaudeAccounts.test_all_out_is_one_429_with_the_earliest_reset_and_no_request $CA \
+  '                if a in tried or self.marked_until(a, now):' '                if a in tried:'
+mut M26 ClaudeAccounts.test_planned_switch_notices_are_kept_out_and_everything_else_shown $CA \
+  'return m["old"].lower() in chain and m["new"].lower() in chain' 'return True'
+mut M27 ClaudeAccounts.test_planned_switch_notices_are_kept_out_and_everything_else_shown $CA \
+  '        if quiet:' '        if False:'
+mut M28 CockpitCards.test_recorded_cards_only_questions_and_unfixable_failures_reach_the_phone $CC \
+  '        if kind not in self.rule["send"]:' '        if False:'
+mut M29 CockpitCards.test_recorded_cards_only_questions_and_unfixable_failures_reach_the_phone $CC \
+  '            if ftype in self.rule["held_failures"]:' '            if False:'
+mut M30 CockpitCards.test_recorded_cards_only_questions_and_unfixable_failures_reach_the_phone $CC \
+  'if self.rule.get("held_when_kept_alive") and self.kept_alive(vm, sid):' 'if False:'
+mut M31 CockpitCards.test_recorded_cards_only_questions_and_unfixable_failures_reach_the_phone harness/configure.py \
+  '"send": ["blocking", "failure"],' '"send": ["blocking", "failure", "limit"],'
+mut M32 CockpitCards.test_one_message_per_chat_and_episode_edited_in_place $CC \
+  '            if t and t.get("msg") is not None:' '            if False:'
+mut M33 CockpitCards.test_one_message_per_chat_and_episode_edited_in_place $CC \
+  'if not t or t.get("card") != cid or t.get("msg") is None:' 'if not t or t.get("msg") is None:'
+mut M34 CockpitCards.test_a_chat_tristan_asked_about_gets_every_card_through $CC \
+  'and float(w.get("until") or 0) > now' 'and False'
+mut M35 CockpitCards.test_a_watched_pr_is_told_once_when_ready_then_the_watch_ends $CC \
+  'if pr.get("draft") or not ci.get("total") or ci.get("fail") or ci.get("pending"):' \
+  'if pr.get("draft") or not ci.get("total") or ci.get("fail"):'
+mut M36 CockpitCards.test_a_watched_pr_is_told_once_when_ready_then_the_watch_ends $CC \
+  '            ended.append(w)
+            done += 1' '            done += 1'
+mut M37 CockpitCards.test_messages_reviews_and_limits_are_held_with_why $CC \
+  '                self.hold(card, why, now)' '                pass'
+mut M38 HermesOps.test_tell_me_watches_name_a_pr_or_a_chat_and_say_who_asked harness/bin/hermes_ops_mcp.py \
+  '        if repo not in REPOS:' '        if False:'
+
 echo "== $pass passed, $fail failed"
 [ "$fail" = 0 ]

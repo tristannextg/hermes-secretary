@@ -24,7 +24,10 @@ HOME = os.path.expanduser(os.environ.get("HERMES_HOME", "~/.hermes"))
 USER = os.path.expanduser("~")
 
 # H13: Hermes's own chain. private is never in it; the cockpit's chats keep the account policy.
-CHAIN = ["claude-work", "claude-dx1", "claude-dx2"]
+# The accounts are one provider, claude-auto (plugin claude-accounts), which takes them in this
+# order and skips a full one before any request; Strata is the next fallback entry.
+ACCOUNTS = ["claude-work", "claude-dx1", "claude-dx2"]
+AUTO = "claude-auto"
 STRATA = {"provider": "custom", "model": "qwen3.8-flash-next-iq3_s",
           "base_url": "http://10.32.0.23:8081/v1", "key_env": "STRATA_API_KEY"}
 SECRET_FILES = f"{HOME}/.env {HOME}/obsidian.env"
@@ -38,9 +41,9 @@ TOOLSETS = ["web", "vision", "memory", "skills", "session_search", "clarify", "t
 def managed(chat_id: int) -> dict:
     return {
         "timezone": "Europe/Berlin",
-        "model": {"provider": CHAIN[0], "default": "sonnet"},
-        "fallback_providers": [{"provider": p, "model": "sonnet"} for p in CHAIN[1:]] + [STRATA],
-        "providers": {p: {"stale_timeout_seconds": 900} for p in CHAIN},
+        "model": {"provider": AUTO, "default": "sonnet"},
+        "fallback_providers": [STRATA],
+        "providers": {p: {"stale_timeout_seconds": 900} for p in [AUTO, *ACCOUNTS]},
         "auth.adopt_external_logins": False,
         "agent.reasoning_effort": "medium",
         # free, keyless: SEARXNG_URL in .env names July's SearXNG, which no longer runs, and an
@@ -51,7 +54,7 @@ def managed(chat_id: int) -> dict:
         "memory.memory_char_limit": 6000,
         # the briefing is the day's most important job (Opus); unpinned, so it keeps the chain
         "cron.model": "opus",
-        "cron.model_provider": CHAIN[0],
+        "cron.model_provider": AUTO,
         "terminal": {
             "backend": "docker",
             # an empty host directory: nothing of the VM is mounted into the sandbox
@@ -103,9 +106,21 @@ def managed(chat_id: int) -> dict:
         "platform_toolsets.telegram": TOOLSETS,
         "platform_toolsets.cli": TOOLSETS,
         "platform_toolsets.cron": TOOLSETS,
-        "plugins.entries.cockpit-cards.settings": {"chat_id": chat_id, "poll_s": 8},
+        "plugins.entries.cockpit-cards.settings": {"chat_id": chat_id, "poll_s": 8, "relay": RELAY},
     }
 
+
+# Which cockpit cards reach Tristan's phone (P8: only what needs his decision now); the rest
+# waits in the relay's held log for "what's up?" and the morning briefing. The one place this
+# rule lives: plugins/cockpit-cards reads it from its settings.
+RELAY = {
+    "send": ["blocking", "failure"],
+    # the cockpit's limit rule moves a chat stuck at its limit; its limit card is not relayed either
+    "held_failures": ["rate_limit"],
+    # keep-alive revives a watched chat whose claude died
+    "held_when_kept_alive": True,
+    "tell_me_every_s": 60,
+}
 
 PLUGINS = ["claude-subscription-directsdk-experimental", "cockpit-cards"]
 

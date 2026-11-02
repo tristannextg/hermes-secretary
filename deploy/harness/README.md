@@ -14,9 +14,9 @@ setup in `deploy/claude` (`~/hermes-claude`) stays on disk as the rollback.
 | hermes-agent v0.22.5 | `~/.hermes/hermes-agent` (git checkout at the tag); `hermes` is `~/.local/bin/hermes` |
 | the gateway (Telegram, cron scheduler) | `hermes-gateway.service` (user unit, written by `hermes gateway install`) |
 | the official Claude plugin 0.3.3 | `~/.hermes/plugins/claude-subscription-directsdk-experimental` (catalog pin 20048e6) |
-| one provider per Claude account | `~/.hermes/plugins/model-providers/claude-accounts`, `~/.hermes/claude-accounts.json` |
+| one provider per Claude account, and `claude-auto` | `~/.hermes/plugins/model-providers/claude-accounts`, `~/.hermes/claude-accounts.json`; refusals seen: `~/.hermes/state/claude-headroom.json` |
 | the account wrapper | `~/.hermes/bin/claude-as ACCOUNT` (Claude Code's state per account: `~/.hermes/claude-accounts/ACCOUNT`) |
-| the card relay | `~/.hermes/plugins/cockpit-cards` (state: `~/.hermes/state/cockpit-cards.json`) |
+| the card relay | `~/.hermes/plugins/cockpit-cards` (state and held log: `~/.hermes/state/cockpit-cards.json`; "tell me" watches: `~/.hermes/state/tell-me.json`) |
 | MCP servers | `cockpit` = `nvc-api mcp --as hermes`; `vault` = `~/.hermes/bin/hermes_mcp.py` (agent mode); `ops` = `~/.hermes/bin/hermes_ops_mcp.py` |
 | persona and rules | `~/.hermes/SOUL.md` (this directory's `SOUL.md`: P1–P10) |
 | skills | `~/.hermes/skills/cockpit/{cockpit-help,hand-off,keep-alive,ci-status,worklog,morning-briefing,vault}` |
@@ -33,23 +33,49 @@ model and base_url into one. So the plugin cannot appear in the chain once per a
 `claude-accounts` registers a copy of the official provider profile per account (`claude-work`,
 `claude-dx1`, `claude-dx2`), each with its own provider id and base_url, whose client runs Claude
 Code as `claude-as ACCOUNT`. Everything else (the relay, replay, catalog, error statuses) is the
-official plugin's code. The chain is then plain Hermes config:
+official plugin's code.
+
+**Headroom first (`claude-auto`).** With the accounts as separate chain entries, Hermes tried
+`work` first on every turn even while it sat at its weekly limit, failed over to dx1, and said so
+under the answer each time. So the primary is one more provider, `claude-auto`, whose client picks
+per request the first account in the order work → Duxalpha1 → Duxalpha2 that has headroom:
+
+- the cockpit's usage readings (`nvc-api accounts.list --as hermes`, cached 60 s): an account
+  with a window at 99% or more whose `resets_at` is still ahead has none until then;
+- the refusals this host saw: a 429 or 402 marks the account until the reset its fullest window
+  names (15 min when the readings name none), a 401 for 30 min. The marks live in
+  `state/claude-headroom.json`, shared by the gateway, cron and the CLI; a success clears one.
+- An account only the readings call full is still tried when no other is left (a reading can be
+  behind), once: its refusal marks it. A refusal comes before any output, so the next account
+  starts the same request again with nothing repeated; an error after output, or any other error
+  (529, a timeout), is Hermes's as before.
+- With every account out, `claude-auto` answers one 429 whose body names the earliest reset
+  (no Claude Code is started), so Hermes goes to Strata and stays there until that reset.
+
+Settings are `auto` in `claude-accounts.json` (`full_pct`, `usage_ttl_s`, `limited_s`,
+`login_s`). The chain in Hermes config:
 
 ```yaml
-model: {provider: claude-work, default: sonnet}
+model: {provider: claude-auto, default: sonnet}
 fallback_providers:
-  - {provider: claude-dx1, model: sonnet}
-  - {provider: claude-dx2, model: sonnet}
   - {provider: custom, model: qwen3.8-flash-next-iq3_s, base_url: http://10.32.0.23:8081/v1, key_env: STRATA_API_KEY}
-providers: {claude-work: {stale_timeout_seconds: 900}, ...}
-cron: {model: opus, model_provider: claude-work}   # unpinned jobs keep the chain
+providers: {claude-auto: {stale_timeout_seconds: 900}, claude-work: {...}, ...}
+cron: {model: opus, model_provider: claude-auto}
 ```
 
-Hermes fails over per turn on 429/529/401/connection errors, several hops in one turn, and
-benches a rate-limited account until the reset its error names. Measured on dev-cloud
-2026-10-28: with `work` answering 401, `claude-dx1` served the turn; with all three answering 401,
-the turn went work → dx1 → dx2 → Strata within one turn and Strata answered; a conversation whose
-first turn ran on `work` (with thinking) continued on `claude-dx1` with the replayed history.
+`claude-work`, `claude-dx1` and `claude-dx2` stay registered for an explicit `/model` pin.
+Measured on dev-cloud 2026-10-28 (the per-account chain): a conversation whose first turn ran on
+`work` (with thinking) continued on `claude-dx1` with the replayed history, which is what a
+switch inside `claude-auto` does too.
+
+**No switch chatter.** hermes-agent shows "⚠️ Model fallback: … unavailable; using …" and
+"✅ Primary model restored …" under the next answer after every switch; its only setting for
+that (`display.suppress_warning_notifications`) hides every warning. `claude-accounts` wraps the
+one emitter of those lines (`StatusOutputMixin._emit_diagnostic_status`, in the process, no file
+of hermes-agent is changed) and drops a switch notice whose two providers are both in the
+configured chain (`model.provider` + `fallback_providers`); every other warning passes. A turn
+that fails on every provider still ends with its error and the trace of what was tried: that path
+emits through `_emit_status`, which is not wrapped.
 
 **Logins.** None is needed: `claude-as` reads the cockpit's own setup-token for the account from
 `~/.config/nvc/accounts/ACCOUNT.token` (the file `nvc-vm` reads) at every start and gives it to
@@ -63,10 +89,29 @@ The gateway owns @Hermes_secretarybot (`TELEGRAM_BOT_TOKEN` in `~/.hermes/.env`,
 `~/hermes-claude` used; `TELEGRAM_ALLOWED_USERS` is Tristan's id). With the cockpit's
 `notify.telegram = { via = "hermes" }` its host daemon stops using its own bot and keeps its cards
 for Hermes: `cockpit-cards` polls `notify.pending` every 8 s (doubling to 5 minutes while the API
-refuses or the laptop sleeps), sends each new card with its buttons, silent when the card says so
-(the cockpit's night), edits it when it is answered, closed or put off, and routes a tap or a text
-reply to `notify.answer` / `notify.open` / `notify.later`. No model call decides any of that. Before
-the cockpit side is deployed the relay just waits (it logs once).
+refuses or the laptop sleeps). No model call decides what it does.
+
+**Only what needs Tristan (P8).** The rule is in one place, `plugins.entries.cockpit-cards.
+settings.relay` (written by `configure.py`, `RELAY`):
+
+| card | on Telegram? |
+|---|---|
+| `blocking` (an agent's question, permission, plan, a turn that ended asking) | yes |
+| `failure` | yes, unless its chat is watched by keep-alive (it revives it) or `session.get` says `rate_limit` (the cockpit's limit rule moves it) |
+| `limit`, `message` (the secretary's, notices), `review` | no |
+| any card of a chat Tristan asked about (`tellme_add` with `vm`+`id`), except `limit` | yes |
+| a PR Tristan asked about (`tellme_add` with `pr`) | one message once it is ready to merge (open, no draft, every check passed, approved or clean), merged or closed; then the watch ends |
+
+What goes out is one message per chat and episode: a card is filed under its inbox `item`
+(`dev-1/3d76bde7/blocking#e4`, one per question, failure or turn), and a newer card of that item
+(a "later" that came back) edits the message instead of sending another. Each message is silent
+when the card says so (the cockpit's night), edited when the card is answered, closed or put off,
+and a tap or a text reply goes to `notify.answer` / `notify.open` / `notify.later`. A held card goes
+to the held log in the delivery state, with why; the `ops` tool `cards_held` lists it, Hermes
+answers "what's up?" from it, and the morning briefing reads the night's. On the cockpit's card
+store of 2026-11-02, 39 of 61 cards were failures and 4 limits. Without a `relay` setting the
+plugin logs an error and relays questions and permissions only. Before the cockpit side is
+deployed the relay just waits (it logs once).
 
 ## Install, switch, roll back
 
@@ -75,6 +120,7 @@ On dev-cloud, from a copy of this repo's `deploy/` (e.g. `~/hermes-harness-src`)
 ```bash
 deploy/harness/install.sh --docs DIR   # files, plugins, skills, config, cron jobs (paused); Telegram untouched
 deploy/harness/install.sh --switch     # the gateway takes @Hermes_secretarybot; hermes-claude-* disabled
+                                       # (also the redeploy of a running Hermes: it restarts the gateway once)
 deploy/harness/install.sh --rollback   # gateway off; hermes-claude-* enabled and started again
 ```
 
@@ -133,3 +179,7 @@ python3 -m unittest discover -s deploy/claude/tests     # hermes_mcp.py, shared 
   auto-selected as the web backend: config pins DDGS (search) and keyless Firecrawl (extract).
 - The plugin's `claude_config_dir` setting and `CLAUDE_SUBSCRIPTION_DIRECTSDK_COMMAND` are
   per process, not per fallback entry: that is why `claude-accounts` exists.
+- `install.sh` without `--switch` pauses the cron jobs: on a Hermes that already runs, redeploy
+  with `--switch`.
+- A running `hermes` CLI (Tristan's, in `tmux -L nvc-hermes`) keeps the plugin code it started
+  with until it is restarted.
