@@ -460,14 +460,13 @@ class AutoClient:
     HERMES_SKIP_TRANSPORT_WRAP = True
     HERMES_SKIP_ASYNC_WRAP = True
 
-    def __init__(self, sdk, headroom, wrapper, base_url, **client_kwargs):
+    def __init__(self, sdk, headroom, wrapper, base_url, client_kwargs):
         # Hermes snapshots routing metadata from client-shaped objects; this is not a credential.
         self.api_key = "external-process"
         self.base_url = base_url
         self.sdk, self.headroom, self.wrapper = sdk, headroom, wrapper
-        client_kwargs.pop("command", None)
-        client_kwargs.pop("args", None)
-        self.client_kwargs = client_kwargs
+        # Hermes passes its own api_key and base_url too; the command is the account's
+        self.client_kwargs = {k: v for k, v in client_kwargs.items() if k not in ("command", "args")}
         self.clients, self.lock = {}, threading.Lock()
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
 
@@ -522,7 +521,7 @@ def auto_profile(base, official, sdk, auto: dict, accounts: list, wrapper: str, 
 
     class AutoProfile(type(base)):
         def create_client(self, **client_kwargs):
-            return AutoClient(sdk, headroom, wrapper, self.base_url, **client_kwargs)
+            return AutoClient(sdk, headroom, wrapper, self.base_url, client_kwargs)
 
         # The setup check and the model list are the same for every account: ask the first.
         def setup_status(self, **kwargs):

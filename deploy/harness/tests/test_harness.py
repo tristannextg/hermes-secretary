@@ -281,7 +281,10 @@ class ClaudeAccounts(unittest.TestCase):
         sdk.SCRIPT.update(script or {})
         sdk.RUNS.clear()
         profile = self.registered["claude-auto"]
-        client = profile.create_client(command="claude", args=[], timeout=5)
+        # as Hermes's external-process branch calls it
+        client = profile.create_client(api_key="external-process", base_url="process://claude-auto",
+                                       command="claude", args=[], timeout=5)
+        self.assertEqual(client.base_url, "process://claude-auto")
         h = client.headroom
         self.readings = 0
 

@@ -120,9 +120,12 @@ On dev-cloud, from a copy of this repo's `deploy/` (e.g. `~/hermes-harness-src`)
 ```bash
 deploy/harness/install.sh --docs DIR   # files, plugins, skills, config, cron jobs (paused); Telegram untouched
 deploy/harness/install.sh --switch     # the gateway takes @Hermes_secretarybot; hermes-claude-* disabled
-                                       # (also the redeploy of a running Hermes: it restarts the gateway once)
+                                       # (also the redeploy of a running Hermes; then hermes gateway restart)
 deploy/harness/install.sh --rollback   # gateway off; hermes-claude-* enabled and started again
 ```
+
+To undo one change rather than the switch, run `install.sh --switch` from a checkout of the
+commit before it, then `hermes gateway restart` (install.sh does not restart a running gateway).
 
 `--docs DIR` ships the cockpit's `README.md` and `API.md` (from the deployed cockpit, e.g.
 `rsync ~/nvim-cockpit/{README,API}.md nxguide-dev-cloud:hermes-harness-src/cockpit-docs/` on the
