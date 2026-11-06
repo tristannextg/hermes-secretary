@@ -5,6 +5,7 @@ are stubbed in sys.modules, the Session API is a fake `call`, and Claude Code is
 """
 
 import asyncio
+import datetime
 import importlib.util
 import io
 import json
@@ -914,6 +915,216 @@ class HermesOps(unittest.TestCase):
         self.assertNotRegex(src, r"method=\"(POST|PUT|PATCH|DELETE)\"")
         with self.assertRaisesRegex(ValueError, "repo must be one of"):
             self.ops.gh_pr({"number": 1, "repo": "someone/else"})
+
+
+# ------------------------------------------------------------ the Neovim docs: build and search
+WINDOWS_TXT = """\
+==============================================================================
+3. Closing a window\t\t\t\t\t*window-close*
+
+CTRL-W o\t\t\t\t\t\t*CTRL-W_o* *E445*
+CTRL-W CTRL-O\t\t\t\t\t*CTRL-W_CTRL-O* *:on* *:only*
+\t\tMake the current window the only one on the screen. All other
+\t\twindows are closed.
+
+\t\tWhen the 'hidden' option is set, all buffers in closed windows
+\t\tbecome hidden.
+
+\t\t\t\t\t\t\t*:fc* *:fclose*
+:[count]fc[lose][!]
+\t\tClose [count] floating windows with the highest zindex values.
+
+==============================================================================
+4. Moving cursor to other windows\t\t\t*window-move-cursor*
+"""
+PICKER_TXT = """\
+*snacks-picker*  snacks.nvim-picker
+
+          win = {
+            input = {
+              keys = {
+                ["<c-q>"] = { "qflist", mode = { "i", "n" } },
+"""
+README_MD = """\
+# cockpit
+
+## Keys
+
+| `Alt-i` | the inbox |
+
+```bash
+# not a heading
+```
+
+### Inbox
+
+Answers go to the chat, in its window.
+"""
+
+
+class NeovimDocs(unittest.TestCase):
+    """scripts/neovim_docs.py builds the tree from stand-in nvim / nvc-vm binaries; the ops tools
+    search what it built."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        d = self.dir.name
+        self.runtime = os.path.join(d, "runtime")
+        self.lazy = os.path.join(d, "lazy")
+        self.src = os.path.join(d, "nvc-src")
+        self.out = os.path.join(d, "docs", "neovim")
+        for p in (os.path.join(self.runtime, "doc"), os.path.join(self.lazy, "snacks.nvim", "doc"),
+                  os.path.join(self.lazy, "nvim-lint", "doc"), os.path.join(self.src, "nvim")):
+            os.makedirs(p)
+        write = self._write
+        write(os.path.join(self.runtime, "doc", "windows.txt"), WINDOWS_TXT)
+        write(os.path.join(self.runtime, "doc", "tags"), "not a doc\n")
+        write(os.path.join(self.lazy, "snacks.nvim", "doc", "snacks.nvim-picker.txt"), PICKER_TXT)
+        write(os.path.join(self.lazy, "snacks.nvim", "README.md"), "# snacks\n\n## Picker\n\nThe picker.\n")
+        write(os.path.join(self.lazy, "nvim-lint", "doc", "lint.txt"), "*lint-window* only window lint\n")
+        write(os.path.join(self.lazy, "unlocked", "README.md"), "# not in the lock\n")
+        write(os.path.join(self.src, "README.md"), README_MD)
+        write(os.path.join(self.src, "API.md"), "# API\n\n### `guide.get`\n\nThe guide.\n")
+        write(os.path.join(self.src, ".nvc-sha"), "2c1af9b0ccc7\n")
+        write(os.path.join(self.src, "install-vm.sh"), "NVIM_VERSION=0.12.5\n")
+        write(os.path.join(self.src, "nvim", "lazy-lock.json"), json.dumps(
+            {"snacks.nvim": {"commit": "882c996aaaa"}, "nvim-lint": {"commit": "1111111"}}))
+        guide = {"v": 1, "sha": "2c1af9b0ccc7", "at_text": "today", "places": [
+            {"name": "chat", "groups": [{"label": "Cockpit", "entries": [
+                {"key": "Alt-i", "desc": "inbox (what needs you, all VMs)"}]}]}],
+            "keys": [{"key": "Alt-a", "text": "agent sessions"}], "sections": [], "tips": [], "marks": []}
+        maps = {"v": 1, "leader": " ", "maps": [
+            {"mode": "n", "lhs": " wd", "desc": "Delete Window", "rhs": ""},
+            {"mode": "n", "lhs": "<C-W>o", "desc": "", "rhs": ":only<CR>"},
+            {"mode": "n", "lhs": "<Plug>(x)", "desc": "hidden", "rhs": ""}]}
+        self.nvim = self._stub("nvim", f"""
+case "$*" in
+  --version) echo "NVIM v0.12.5" ;;
+  *--clean*) printf %s '{self.runtime}' ;;
+  *luafile*) echo noise; echo '{json.dumps(maps)}' ;;
+  *) exit 9 ;;
+esac""")
+        self.nvc_vm = self._stub("nvc-vm", f"echo '{json.dumps(guide)}'")
+        self.build = load("neovim_docs_under_test", os.path.join(HARNESS, "scripts", "neovim_docs.py"))
+        b = self.build
+        b.OUT, b.NVIM, b.NVC_VM, b.LAZY, b.COCKPIT = self.out, self.nvim, self.nvc_vm, self.lazy, self.src
+        b.MIN_RUNTIME_FILES, b.MIN_TAGS, b.MIN_KEYMAPS = 1, 5, 1
+        self.ops = load("hermes_ops_nvim_under_test", os.path.join(HARNESS, "bin", "hermes_ops_mcp.py"))
+        self.ops.NVIM_DOCS = self.out
+
+    def _write(self, path, text):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(text)
+
+    def _stub(self, name, body):
+        path = os.path.join(self.dir.name, "bin", name)
+        self._write(path, "#!/bin/sh\n" + body + "\n")
+        os.chmod(path, 0o755)
+        return path
+
+    def _build(self):
+        out = io.StringIO()
+        with mock.patch.object(sys, "stdout", out):
+            rc = self.build.main()
+        return rc, out.getvalue()
+
+    def test_the_build_writes_the_tree_its_index_and_what_does_not_match_a_pin(self):
+        self.assertEqual(self._build(), (0, ""))  # silent when it worked: the cron job says nothing
+        files = sorted(os.path.relpath(os.path.join(d, f), self.out)
+                       for d, _, fs in os.walk(self.out) for f in fs)
+        self.assertEqual(files, [
+            "MANIFEST.json", "cockpit/API.md", "cockpit/README.md", "cockpit/guide.json", "cockpit/guide.md",
+            "keymaps.md", "nvim/windows.txt", "plugins/nvim-lint/doc/lint.txt",
+            "plugins/snacks.nvim/README.md", "plugins/snacks.nvim/doc/snacks.nvim-picker.txt", "tags.tsv"])
+        with open(os.path.join(self.out, "tags.tsv")) as f:
+            tags = f.read().splitlines()
+        for row in ("CTRL-W_o\tnvim/windows.txt\t4", ":only\tnvim/windows.txt\t5", "E445\tnvim/windows.txt\t4",
+                    "snacks-picker\tplugins/snacks.nvim/doc/snacks.nvim-picker.txt\t1",
+                    "Inbox\tcockpit/README.md\t11", "guide.get\tcockpit/API.md\t3"):
+            self.assertIn(row, tags)
+        self.assertFalse([t for t in tags if t.startswith("not a heading")])  # a comment in a code block
+        with open(os.path.join(self.out, "keymaps.md")) as f:
+            maps = f.read()
+        self.assertIn("normal           <leader>wd           Delete Window", maps)
+        self.assertIn("<C-W>o               :only<CR>", maps)
+        self.assertNotIn("<Plug>", maps)
+        with open(os.path.join(self.out, "cockpit", "guide.md")) as f:
+            self.assertIn("- `Alt-i` (chat, Cockpit): inbox (what needs you, all VMs)", f.read())
+        with open(os.path.join(self.out, "MANIFEST.json")) as f:
+            m = json.load(f)
+        self.assertEqual((m["nvim"], m["nvim_pinned"], m["cockpit"]), ("0.12.5", "0.12.5", "2c1af9b0ccc7"))
+        # the stand-in plugin dirs are no git checkouts: neither is at its locked commit
+        self.assertEqual(m["drift"], ["nvim-lint at missing, lazy-lock.json says 1111111",
+                                      "snacks.nvim at missing, lazy-lock.json says 882c996"])
+
+    def test_a_failed_build_keeps_the_last_good_tree_and_says_why(self):
+        self.assertEqual(self._build()[0], 0)
+        with open(os.path.join(self.out, "MANIFEST.json")) as f:
+            before = f.read()
+        self._stub("nvc-vm", "echo 'guide failed' >&2; exit 1")
+        rc, out = self._build()
+        self.assertEqual(rc, 1)
+        self.assertIn("Neovim docs NOT refreshed, the last good copy stays", out)
+        self.assertIn("guide failed", out)
+        with open(os.path.join(self.out, "MANIFEST.json")) as f:
+            self.assertEqual(f.read(), before)
+        self.assertEqual(sorted(os.listdir(os.path.dirname(self.out))), ["neovim"])  # no temp tree left
+
+    def test_a_tag_gives_its_entry_up_to_the_next_one_then_near_tags_and_lines(self):
+        self._build()
+        out = self.ops.nvim_help({"query": ":only"})
+        self.assertIn("Neovim docs: nvim 0.12.5, cockpit 2c1af9b0ccc7, built ", out)
+        self.assertIn("--- nvim/windows.txt:4\nCTRL-W o\t\t\t\t\t\t*CTRL-W_o* *E445*\nCTRL-W CTRL-O", out)
+        self.assertIn("Make the current window the only one on the screen.", out)
+        self.assertIn("become hidden.", out)  # the entry's second paragraph
+        self.assertNotIn("floating windows", out)  # the next entry
+        self.assertIn("Other tags containing it: CTRL-W_o", self.ops.nvim_help({"query": "ctrl-w"}))
+        self.assertIn("--- plugins/snacks.nvim/README.md:3\n## Picker\n\nThe picker.",
+                      self.ops.nvim_help({"query": "Picker"}))
+
+    def test_words_find_lines_where_the_file_name_counts_and_the_setup_comes_first(self):
+        self._build()
+        out = self.ops.nvim_help({"query": "snacks picker <c-q>"})
+        self.assertIn('Lines, 1 of 1:\nplugins/snacks.nvim/doc/snacks.nvim-picker.txt:6: ["<c-q>"] = { "qflist"', out)
+        out = self.ops.nvim_help({"query": "window"})
+        lines = out.split("Lines, ")[1].splitlines()[1:]
+        self.assertEqual(lines[0], "keymaps.md:6: normal           <leader>wd           Delete Window")
+        self.assertEqual(lines[1], "cockpit/README.md:13: Answers go to the chat, in its window.")
+        self.assertEqual(self.ops.nvim_help({"query": "inbox", "in": "cockpit"}).split("Lines, ")[1].splitlines()[1],
+                         "cockpit/guide.md:9: - `Alt-i` (chat, Cockpit): inbox (what needs you, all VMs)")
+        self.assertTrue(lines[-1].startswith("plugins/"), lines)
+        # `in` is a directory, not a prefix: nvim is not nvim-lint
+        out = self.ops.nvim_help({"query": "window", "in": "nvim"})
+        self.assertIn("Other tags containing it: window-close  window-move-cursor", out)
+        self.assertNotIn("lint-window", out)
+        self.assertNotIn("plugins/nvim-lint", out)
+        self.assertIn("plugins/nvim-lint/doc/lint.txt:1:", self.ops.nvim_help({"query": "window", "in": "nvim-lint"}))
+        with self.assertRaisesRegex(ValueError, r"nvim-lint, snacks.nvim"):
+            self.ops.nvim_help({"query": "x", "in": "telescope"})
+
+    def test_reading_is_confined_and_stale_or_missing_docs_say_so(self):
+        self._build()
+        out = self.ops.nvim_help_read({"file": "nvim/windows.txt", "line": 4, "lines": 2})
+        self.assertIn("--- nvim/windows.txt (17 lines)\n4: CTRL-W o", out)
+        self.assertTrue(out.rstrip().endswith("5: CTRL-W CTRL-O\t\t\t\t\t*CTRL-W_CTRL-O* *:on* *:only*"))
+        self.assertIn("Close [count] floating", self.ops.nvim_help_read({"tag": ":fclose"}))
+        for bad in ({"file": "../../etc/passwd"}, {"tag": "no-such-tag"}):
+            with self.assertRaises(ValueError):
+                self.ops.nvim_help_read(bad)
+        with self.assertRaisesRegex(ValueError, "outside"):
+            self.ops.nvim_help({"query": "x", "in": "../.."})
+        path = os.path.join(self.out, "MANIFEST.json")
+        with open(path) as f:
+            m = json.load(f)
+        m["built"] = (datetime.datetime.now().astimezone() - datetime.timedelta(days=4)).isoformat()
+        with open(path, "w") as f:
+            json.dump(m, f)
+        self.assertIn("(STALE: the daily neovim-docs job", self.ops.nvim_help({"query": ":only"}))
+        self.ops.NVIM_DOCS = os.path.join(self.dir.name, "nowhere")
+        with self.assertRaisesRegex(ValueError, "has not built them"):
+            self.ops.nvim_help({"query": ":only"})
 
 
 # ------------------------------------------------------------ the vault gate, hermes_mcp agent mode

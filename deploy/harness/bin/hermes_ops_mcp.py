@@ -15,6 +15,8 @@ or confined to one file:
 - memory_list / memory_read / memory_search: Tristan's shared Claude memory (Syncthing'd from
   the laptop), read-only, confined to that directory.
 - cockpit_doc: the cockpit's README.md / API.md as shipped into the cockpit-help skill.
+- nvim_help / nvim_help_read: the Neovim docs scripts/neovim_docs.py builds daily into
+  $HERMES_HOME/docs/neovim (help tags first, then lines), read-only, confined to that directory.
 - gh_pr, gh_runs, gh_job_log, gh_prs: GitHub, GET only (there is no other HTTP method in this
   file), for the repos in GITHUB_RO_REPOS. The token is read by key from GITHUB_RO_TOKEN_FILES
   at each call and never enters the model's context; job logs are redacted before they do.
@@ -44,6 +46,15 @@ TOKEN_FILES = os.environ.get("GITHUB_RO_TOKEN_FILES", "~/hermes-ai-secretary/.en
 GITHUB = "https://api.github.com"
 MAX_TEXT = 60000
 MAX_SECTION = 4000
+NVIM_DOCS = os.path.expanduser(os.environ.get("HERMES_NVIM_DOCS", os.path.join(HOME, "docs", "neovim")))
+NVIM_STALE_S = 3 * 86400  # the neovim-docs job runs daily: three missed runs is a broken job
+NVIM_SECTION_LINES = 60
+NVIM_LINES = 40
+NVIM_PER_FILE = 8
+NVIM_NEAR = 25
+# Grep hits are listed in this order: what Tristan's own setup does first, then Neovim, then plugins
+NVIM_FIRST = ("keymaps.md", "cockpit/guide.md", "cockpit/README.md", "cockpit/", "nvim/", "plugins/", "")
+HELP_TAG = re.compile(r"(?:^|(?<=\s))\*([^\s*|]+)\*(?=\s|$)")
 SESSION_ID = re.compile(r"^[0-9a-f]{8}$")
 VM_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$")
 
@@ -321,6 +332,160 @@ def cockpit_doc(args: dict) -> str:
     )
 
 
+# ------------------------------------------------------------ Neovim docs
+_nvim_tags = {"stamp": None, "rows": []}
+
+
+def nvim_header() -> str:
+    """Which docs answer: their versions, their age, what does not match the cockpit's pins."""
+    try:
+        with open(os.path.join(NVIM_DOCS, "MANIFEST.json")) as f:
+            m = json.load(f)
+    except (OSError, ValueError):
+        raise ValueError(f"no Neovim docs in {NVIM_DOCS}: the neovim-docs cron job has not built them")
+    head = f"Neovim docs: nvim {m.get('nvim')}, cockpit {m.get('cockpit')}, built {m.get('built')}"
+    built = datetime.datetime.fromisoformat(m["built"]).timestamp()
+    if time.time() - built > NVIM_STALE_S:
+        head += " (STALE: the daily neovim-docs job has not refreshed them since; say so)"
+    if m.get("drift"):
+        head += "\nNot what the cockpit pins: " + "; ".join(m["drift"])
+    return head
+
+
+def nvim_tags() -> list:
+    path = os.path.join(NVIM_DOCS, "tags.tsv")
+    st = os.stat(path)
+    if _nvim_tags["stamp"] != (st.st_mtime, st.st_size):
+        with open(path, errors="replace") as f:
+            rows = [r.split("\t") for r in f.read().splitlines()]
+        _nvim_tags.update(stamp=(st.st_mtime, st.st_size),
+                          rows=[(t, p, int(n)) for t, p, n in (r for r in rows if len(r) == 3)])
+    return _nvim_tags["rows"]
+
+
+def nvim_section(rel: str, line: int, limit: int = NVIM_SECTION_LINES) -> str:
+    """A help tag's entry (its tag lines and the text up to the next entry or rule), or a
+    markdown heading's section (up to the next heading of its level)."""
+    with open(confined(NVIM_DOCS, rel), errors="replace") as f:
+        lines = f.read().splitlines()
+    md = rel.endswith(".md")
+    start = line
+    # an entry names itself on several lines (CTRL-W o, then CTRL-W CTRL-O ... *:only*)
+    while not md and start > 1 and line - start < 3 and HELP_TAG.search(lines[start - 2]) \
+            and not re.match(r"^[=-]{20,}\s*$", lines[start - 2]):
+        start -= 1
+    out = lines[start - 1:line]
+    level = len(re.match(r"#*", lines[line - 1]).group(0))
+    text_seen, fence = False, False
+    for raw in lines[line:line - 1 + limit]:
+        if md:
+            fence = fence != raw.lstrip().startswith("```")
+            h = re.match(r"(#{1,6})\s", raw)
+            if h and not fence and level and len(h.group(1)) <= level:
+                break
+        else:
+            if re.match(r"^[=-]{20,}\s*$", raw):
+                break
+            if HELP_TAG.search(raw):
+                if text_seen:
+                    break
+            elif raw.strip():
+                text_seen = True
+        out.append(raw)
+    return f"--- {rel}:{start}\n" + "\n".join(out).rstrip()
+
+
+def nvim_files(scope: str):
+    if scope:
+        for cand in (scope, os.path.join("plugins", scope)):
+            path = confined(NVIM_DOCS, cand)
+            if os.path.exists(path):
+                break
+        else:
+            raise ValueError(f"no docs for {scope!r}: `in` is nvim, cockpit, keymaps.md or a plugin "
+                             f"({', '.join(sorted(os.listdir(os.path.join(NVIM_DOCS, 'plugins'))))})")
+        roots = [path]
+    else:
+        roots = [NVIM_DOCS]
+    for root in roots:
+        if os.path.isfile(root):
+            yield root
+            continue
+        for d, dirs, names in os.walk(root):
+            dirs.sort()
+            for fn in sorted(names):
+                if fn.endswith((".txt", ".md")):
+                    yield os.path.join(d, fn)
+
+
+def nvim_grep(query: str, scope: str, limit: int) -> str:
+    words = [w for w in query.lower().split() if len(w) > 1] or [query.lower()]
+    hits = []
+    for path in nvim_files(scope):
+        rel = os.path.relpath(path, NVIM_DOCS)
+        where = rel.lower()
+        with open(path, errors="replace") as f:
+            for n, line in enumerate(f, 1):
+                low = line.lower()
+                if not any(w in low for w in words):
+                    continue
+                # a word may name the file instead (snacks picker <c-q>): the path counts
+                score = sum(w in low or w in where for w in words)
+                hits.append((score, rel, n, line.strip()))
+    if not hits:
+        return f"no line contains any of {words}"
+    best = max(h[0] for h in hits)
+
+    def order(h):
+        return next(i for i, p in enumerate(NVIM_FIRST) if h[1].startswith(p)), h[1], h[2]
+
+    out, per_file = [], {}
+    for _, rel, n, line in sorted((h for h in hits if h[0] == best), key=order):
+        if per_file.get(rel, 0) < NVIM_PER_FILE and len(out) < limit:
+            per_file[rel] = per_file.get(rel, 0) + 1
+            out.append(f"{rel}:{n}: {line[:300]}")
+    total = sum(h[0] == best for h in hits)
+    note = "" if best == len(words) else f" (no line has all {len(words)} words: these have {best})"
+    return f"Lines{note}, {len(out)} of {total}:\n" + "\n".join(out)
+
+
+def nvim_help(args: dict) -> str:
+    """Tags first (exact, then case-insensitive, then containing the query), then lines."""
+    query = str(args.get("query") or "").strip()
+    if not query:
+        raise ValueError("query is a help tag (`:only`, `CTRL-W_o`, `'hidden'`, `snacks-picker`) or words")
+    scope = str(args.get("in") or "").strip().strip("/")
+    header = nvim_header()
+    rows = [r for r in nvim_tags()
+            if not scope or r[1] == scope or r[1].startswith((scope + "/", f"plugins/{scope}/"))]
+    exact = [r for r in rows if r[0] == query] or [r for r in rows if r[0].lower() == query.lower()]
+    near = sorted({r[0] for r in rows if query.lower() in r[0].lower()} - {r[0] for r in exact},
+                  key=lambda t: (len(t), t))
+    parts = [header]
+    parts += [nvim_section(p, n) for _, p, n in exact[:3]]
+    if near:
+        parts.append("Other tags containing it: " + "  ".join(near[:NVIM_NEAR]))
+    parts.append(nvim_grep(query, scope, 12 if exact else NVIM_LINES))
+    return "\n\n".join(parts)[:MAX_TEXT]
+
+
+def nvim_help_read(args: dict) -> str:
+    """`file` from line `line`: `lines` lines (default 80); or `tag`'s whole entry."""
+    header = nvim_header()
+    if args.get("tag"):
+        rows = [r for r in nvim_tags() if r[0] == args["tag"]]
+        if not rows:
+            raise ValueError(f"no tag {args['tag']!r}: nvim_help finds near ones")
+        return "\n\n".join([header] + [nvim_section(p, n, 400) for _, p, n in rows[:3]])[:MAX_TEXT]
+    rel = str(args.get("file") or "")
+    with open(confined(NVIM_DOCS, rel), errors="replace") as f:
+        lines = f.read().splitlines()
+    start = max(1, int(args.get("line") or 1))
+    count = min(400, max(1, int(args.get("lines") or 80)))
+    body = "\n".join(f"{n}: {t}" for n, t in enumerate(lines[start - 1:start - 1 + count], start))
+    return f"{header}\n\n--- {rel} ({len(lines)} lines)\n{body}"[:MAX_TEXT]
+
+
 # ------------------------------------------------------------ GitHub, GET only
 def github_token() -> str:
     for path in TOKEN_FILES:
@@ -534,6 +699,21 @@ TOOLS = {
         "The cockpit's README (keys, features) or API (the Session API): its headings, or the "
         "sections that best match `query`. Says when the copy was shipped.",
         _obj({"doc": {"type": "string", "enum": ["README", "API"]}, "query": S}),
+    ),
+    "nvim_help": (
+        nvim_help,
+        ("Search the Neovim docs of Tristan's cockpit (Neovim's :help at the version it runs, "
+         "LazyVim and every plugin it uses, the live keymaps, the cockpit's README/API/guide). "
+         "`query`: a help tag (`:only`, `CTRL-W_o`, `'hidden'`, `i_CTRL-R`, `snacks-picker`) gives "
+         "its entry, then tags containing it and matching lines; plain words give matching lines "
+         "(file:line), best first. `in`: nvim, cockpit, keymaps.md or a plugin dir (snacks.nvim)."),
+        _obj({"query": S, "in": S}, ("query",)),
+    ),
+    "nvim_help_read": (
+        nvim_help_read,
+        ("Read more of the Neovim docs: `tag`'s whole entry, or `file` (as nvim_help names it) "
+         "from `line`, `lines` lines (default 80, at most 400)."),
+        _obj({"tag": S, "file": S, "line": INT, "lines": INT}),
     ),
     "gh_pr": (gh_pr, "One PR: state, base, head sha, mergeable_state, auto-merge, labels.",
               _obj({"number": INT, "repo": S}, ("number",))),

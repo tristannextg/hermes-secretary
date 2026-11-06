@@ -115,5 +115,28 @@ mut M37 CockpitCards.test_messages_reviews_and_limits_are_held_with_why $CC \
 mut M38 HermesOps.test_tell_me_watches_name_a_pr_or_a_chat_and_say_who_asked harness/bin/hermes_ops_mcp.py \
   '        if repo not in REPOS:' '        if False:'
 
+OPS=harness/bin/hermes_ops_mcp.py
+NVD=harness/scripts/neovim_docs.py
+mut M39 NeovimDocs.test_a_tag_gives_its_entry_up_to_the_next_one_then_near_tags_and_lines $OPS \
+  '                if text_seen:' '                if False:'
+mut M40 NeovimDocs.test_words_find_lines_where_the_file_name_counts_and_the_setup_comes_first $OPS \
+  'score = sum(w in low or w in where for w in words)' 'score = sum(w in low for w in words)'
+mut M41 NeovimDocs.test_words_find_lines_where_the_file_name_counts_and_the_setup_comes_first $OPS \
+  'NVIM_FIRST = ("keymaps.md", "cockpit/guide.md", "cockpit/README.md", "cockpit/", "nvim/", "plugins/", "")' \
+  'NVIM_FIRST = ("",)'
+mut M42 NeovimDocs.test_words_find_lines_where_the_file_name_counts_and_the_setup_comes_first $OPS \
+  'r[1].startswith((scope + "/", f"plugins/{scope}/"))' 'r[1].startswith((scope, f"plugins/{scope}"))'
+mut M43 NeovimDocs.test_reading_is_confined_and_stale_or_missing_docs_say_so $OPS \
+  'if time.time() - built > NVIM_STALE_S:' 'if False:'
+mut M44 NeovimDocs.test_a_failed_build_keeps_the_last_good_tree_and_says_why $NVD \
+  '        return 1
+    old = None' '    old = None'
+mut M45 NeovimDocs.test_the_build_writes_the_tree_its_index_and_what_does_not_match_a_pin $NVD \
+  '                            fence = not fence' '                            pass'
+mut M46 NeovimDocs.test_the_build_writes_the_tree_its_index_and_what_does_not_match_a_pin $NVD \
+  'for n, p in plugins.items() if p["commit"] != p["lock"]]' 'for n, p in plugins.items() if False]'
+mut M47 NeovimDocs.test_a_tag_gives_its_entry_up_to_the_next_one_then_near_tags_and_lines $OPS \
+  'while not md and start > 1' 'while False and start > 1'
+
 echo "== $pass passed, $fail failed"
 [ "$fail" = 0 ]

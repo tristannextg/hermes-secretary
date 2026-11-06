@@ -19,8 +19,9 @@ setup in `deploy/claude` (`~/hermes-claude`) stays on disk as the rollback.
 | the card relay | `~/.hermes/plugins/cockpit-cards` (state and held log: `~/.hermes/state/cockpit-cards.json`; "tell me" watches: `~/.hermes/state/tell-me.json`) |
 | MCP servers | `cockpit` = `nvc-api mcp --as hermes`; `vault` = `~/.hermes/bin/hermes_mcp.py` (agent mode); `ops` = `~/.hermes/bin/hermes_ops_mcp.py` |
 | persona and rules | `~/.hermes/SOUL.md` (this directory's `SOUL.md`: P1–P10) |
-| skills | `~/.hermes/skills/cockpit/{cockpit-help,hand-off,keep-alive,ci-status,worklog,morning-briefing,vault}` |
-| cron jobs | `morning-briefing` (Mon–Fri 06:30 Berlin), `vault-commands` (every 5 min, gated), `keep-alive` (every 5 min, no model) |
+| skills | `~/.hermes/skills/cockpit/{cockpit-help,neovim-help,hand-off,keep-alive,ci-status,worklog,morning-briefing,vault}` |
+| cron jobs | `morning-briefing` (Mon–Fri 06:30 Berlin), `vault-commands` (every 5 min, gated), `keep-alive` (every 5 min, no model), `neovim-docs` (daily 05:15, no model) |
+| the Neovim docs | `~/.hermes/docs/neovim` (built by `scripts/neovim_docs.py`, searched by the `ops` tools `nvim_help` / `nvim_help_read`) |
 | the model's shell and files | a docker container (`hermes-toolbox:latest`) with nothing mounted and no network |
 | the old setup | `~/hermes-claude` and its three units, disabled after the switch, never deleted |
 | July's hermes-agent | `~/.hermes/hermes-agent-v0.18.2`; its state in `~/.hermes/backup-2026-10-28-pre-v0.22.5/` |
@@ -112,6 +113,25 @@ answers "what's up?" from it, and the morning briefing reads the night's. On the
 store of 2026-11-02, 39 of 61 cards were failures and 4 limits. Without a `relay` setting the
 plugin logs an error and relays questions and permissions only. Before the cockpit side is
 deployed the relay just waits (it logs once).
+
+## The Neovim docs (the `neovim-help` skill)
+
+Tristan asks Hermes Neovim questions; Hermes answers from the docs of the Neovim he runs, not from
+memory. dev-cloud is a cockpit VM, so its own copies are the cockpit's: the Neovim that
+`install-vm.sh` pins, the plugins in `lazy-lock.json` (`~/.local/share/nvc-nvim/lazy`) and the
+cockpit deployed into `~/.local/share/nvc/src`. `scripts/neovim_docs.py` (cron job `neovim-docs`,
+daily 05:15, no model, about 3 s) builds from them `~/.hermes/docs/neovim`: Neovim's runtime help,
+each plugin's doc/, docs/ and README, the cockpit's README, API and guide (`nvc-vm guide --json`,
+also as `guide.md`), `keymaps.md` (every global keymap of the cockpit's Neovim, from a headless
+start of it) and `tags.tsv` (help tags and markdown headings → file, line). It builds next to the
+old tree and swaps only a complete one; a failure keeps the last good tree and is the job's
+Telegram alert, success is silent. `MANIFEST.json` records the versions and whatever does not
+match a pin, and `nvim_help` prints both, plus STALE after three days without a build.
+
+The model's file tools run in the docker toolbox and cannot see the tree, so `nvim_help` (tags,
+then lines ranked by how many query words they or their file name hold: keymaps and the cockpit
+first) and `nvim_help_read` (a tag's whole entry, or lines of a file) are `ops` tools. Adding them
+needs one gateway restart (or `/reload-mcp` from Telegram).
 
 ## Install, switch, roll back
 
