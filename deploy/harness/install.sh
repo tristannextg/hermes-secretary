@@ -80,6 +80,7 @@ install -m 644 "$SRC/bin/hermes_ops_mcp.py" "$H/bin/hermes_ops_mcp.py"
 install -m 644 "$SRC/../claude/bin/hermes_mcp.py" "$H/bin/hermes_mcp.py"
 install -m 755 "$SRC/scripts/keep_alive.py" "$H/scripts/keep_alive.py"
 install -m 755 "$SRC/scripts/vault_commands_gate.py" "$H/scripts/vault_commands_gate.py"
+install -m 755 "$SRC/scripts/neovim_docs.py" "$H/scripts/neovim_docs.py"
 rm -rf "$H/plugins/model-providers/claude-accounts" "$H/plugins/cockpit-cards"
 cp -r "$SRC/plugins/model-providers/claude-accounts" "$H/plugins/model-providers/claude-accounts"
 cp -r "$SRC/plugins/cockpit-cards" "$H/plugins/cockpit-cards"
@@ -196,7 +197,8 @@ ensure_job vault-commands "*/5 * * * *" "Handle the pending @hermes vault comman
 the vault skill. Confirm each in one short sentence. If the input says the vault API is down, say so in \
 one sentence and stop." --skill vault --script vault_commands_gate.py
 ensure_job keep-alive "every 5m" "" --no-agent --script keep_alive.py
-for n in morning-briefing vault-commands keep-alive; do
+ensure_job neovim-docs "15 5 * * *" "" --no-agent --script neovim_docs.py
+for n in morning-briefing vault-commands keep-alive neovim-docs; do
   id=$(job_id "$n")
   [ -n "$id" ] || die "cron job $n is missing after install"
   if [ "$mode" = switch ]; then
